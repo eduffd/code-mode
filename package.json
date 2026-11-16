@@ -1,0 +1,15 @@
+{
+  "name": "code-mode",
+  "version": "0.1.0",
+  "description": "Pi extension: persistent REPL (code_mode tool) + session-level tool gating (/code-mode command)",
+  "type": "module",
+  "main": "index.ts",
+  "dependencies": {
+    "acorn": "^8.14.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-codemode": "*",
+    "typebox": "*"
+  }
+}
