@@ -317,9 +317,17 @@ const stepRunning = (state: RunningState, event: LifecycleEvent): StepResult => 
 		}
 		case "workerDied":
 			if (event.handle !== state.handle) return stay(state);
-			return { state: IDLE, effects: [], settled: stopRunning(state) };
+			return {
+				state: IDLE,
+				effects: [{ type: "clearTimer", id: state.active.exec.id }],
+				settled: stopRunning(state),
+			};
 		case "stopRequested":
-			return { state: IDLE, effects: [killEffect(state.handle)], settled: stopRunning(state) };
+			return {
+				state: IDLE,
+				effects: [{ type: "clearTimer", id: state.active.exec.id }, killEffect(state.handle)],
+				settled: stopRunning(state),
+			};
 		case "timeoutFired": {
 			if (event.id !== state.active.exec.id) return stay(state);
 			const settled: SettledExec[] = [
