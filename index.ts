@@ -16,7 +16,7 @@
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { truncateOutput } from "./output";
-import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol";
+import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, toIdentifier, type ExecOutcome, type ToolDecl } from "./protocol";
 import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle";
 import { createWorkerHost } from "./worker-host";
 
@@ -24,10 +24,6 @@ import { createWorkerHost } from "./worker-host";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const CODE_MODE_TOOL = "code_mode";
-
-// ---------------------------------------------------------------- helpers
-
-const toIdentifier = (name: string): string => name.replace(/[^A-Za-z0-9_$]/g, "_");
 
 // ---------------------------------------------------------------- extension
 
@@ -63,7 +59,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 	function toolDeclarations(ctx: ExtensionToolContext): ToolDecl[] {
 		return ctx.tools
 			.filter((t) => t.name !== CODE_MODE_TOOL)
-			.map((t) => ({ name: t.name, description: t.description ?? "" }));
+			.map((t) => ({ name: t.name, description: t.description ?? "", inputSchema: t.parameters }));
 	}
 
 	/** The only place a caller future is created: resolve-only, the core settles it. */

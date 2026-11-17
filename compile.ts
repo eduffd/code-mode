@@ -27,9 +27,9 @@ const PARSE_OPTIONS = {
 } as const;
 
 // ---------------------------------------------------------------- AST shapes
-// Only the node kinds this module reads. The `type` discriminant plus the
-// field guards below are the boundary: acorn guarantees estree shapes for a
-// successful parse, and anything this module does not consume stays `unknown`.
+// Only the node kinds this module reads. Acorn's output is external data:
+// every field this module dereferences has a guard that validates it, and
+// every other node stays opaque.
 
 interface AstNode {
 	readonly type: string;
@@ -44,44 +44,33 @@ interface IdentifierNode extends AstNode {
 
 interface ObjectPatternNode extends AstNode {
 	readonly type: "ObjectPattern";
-	readonly properties: readonly PatternElementNode[];
+	readonly properties: readonly unknown[];
 }
 
 interface ArrayPatternNode extends AstNode {
 	readonly type: "ArrayPattern";
-	readonly elements: readonly (PatternNode | null)[];
+	readonly elements: readonly unknown[];
 }
 
 interface AssignmentPatternNode extends AstNode {
 	readonly type: "AssignmentPattern";
-	readonly left: PatternNode;
+	readonly left: unknown;
 }
 
 interface RestElementNode extends AstNode {
 	readonly type: "RestElement";
-	readonly argument: PatternNode;
+	readonly argument: unknown;
 }
 
 interface PatternPropertyNode extends AstNode {
 	readonly type: "Property";
-	readonly value: PatternNode;
+	readonly value: unknown;
 }
-
-/** A binding target: the kinds that carry names, plus the non-binding rest. */
-type PatternNode =
-	| IdentifierNode
-	| ObjectPatternNode
-	| ArrayPatternNode
-	| AssignmentPatternNode
-	| RestElementNode
-	| AstNode;
-
-type PatternElementNode = PatternNode;
 
 interface VariableDeclarationNode extends AstNode {
 	readonly type: "VariableDeclaration";
 	readonly kind: "var" | "let" | "const";
-	readonly declarations: readonly { readonly id: PatternNode }[];
+	readonly declarations: readonly { readonly id: unknown }[];
 }
 
 interface FunctionDeclarationNode extends AstNode {
@@ -96,7 +85,6 @@ interface ClassDeclarationNode extends AstNode {
 
 interface ExpressionStatementNode extends AstNode {
 	readonly type: "ExpressionStatement";
-	readonly expression: AstNode;
 }
 
 interface ProgramNode extends AstNode {
@@ -104,24 +92,50 @@ interface ProgramNode extends AstNode {
 	readonly body: readonly AstNode[];
 }
 
-const isProgramNode = (v: unknown): v is ProgramNode =>
-	isAstNode(v) && v.type === "Program" && "body" in v && Array.isArray((v as { body: unknown }).body);
-
 const isAstNode = (v: unknown): v is AstNode =>
 	typeof v === "object" && v !== null && typeof (v as AstNode).type === "string";
 
-const isPatternProperty = (v: unknown): v is PatternPropertyNode =>
-	isAstNode(v) && v.type === "Property" && "value" in v && isAstNode((v as PatternPropertyNode).value);
+const isProgramNode = (v: unknown): v is ProgramNode =>
+	isAstNode(v) && v.type === "Program" && "body" in v && Array.isArray((v as { body: unknown }).body);
 
-const isVariableDeclaration = (v: unknown): v is VariableDeclarationNode => {
+const isIdentifierNode = (v: unknown): v is IdentifierNode =>
+	isAstNode(v) && v.type === "Identifier" && "name" in v && typeof (v as { name: unknown }).name === "string";
+
+const isPatternPropertyNode = (v: unknown): v is PatternPropertyNode =>
+	isAstNode(v) && v.type === "Property" && "value" in v;
+
+const isObjectPatternNode = (v: unknown): v is ObjectPatternNode =>
+	isAstNode(v) && v.type === "ObjectPattern" && "properties" in v && Array.isArray((v as { properties: unknown }).properties);
+
+const isArrayPatternNode = (v: unknown): v is ArrayPatternNode =>
+	isAstNode(v) && v.type === "ArrayPattern" && "elements" in v && Array.isArray((v as { elements: unknown }).elements);
+
+const isAssignmentPatternNode = (v: unknown): v is AssignmentPatternNode =>
+	isAstNode(v) && v.type === "AssignmentPattern" && "left" in v;
+
+const isRestElementNode = (v: unknown): v is RestElementNode =>
+	isAstNode(v) && v.type === "RestElement" && "argument" in v;
+
+const isVariableDeclarationNode = (v: unknown): v is VariableDeclarationNode => {
 	if (!isAstNode(v) || v.type !== "VariableDeclaration") return false;
+	const kind = (v as { kind?: unknown }).kind;
 	const decls = (v as { declarations?: unknown }).declarations;
+	if (kind !== "var" && kind !== "let" && kind !== "const") return false;
 	if (!Array.isArray(decls)) return false;
-	return decls.every((d) => isAstNode(d) && "id" in d && isAstNode((d as { id: unknown }).id));
+	return decls.every((d) => isAstNode(d) && "id" in d);
 };
 
-const isExpressionStatement = (v: unknown): v is ExpressionStatementNode =>
-	isAstNode(v) && v.type === "ExpressionStatement" && "expression" in v && isAstNode((v as { expression: unknown }).expression);
+const isNamedDeclarationNode = (
+	v: unknown,
+	type: "FunctionDeclaration" | "ClassDeclaration",
+): v is FunctionDeclarationNode | ClassDeclarationNode =>
+	isAstNode(v) &&
+	v.type === type &&
+	"id" in v &&
+	((v as { id: unknown }).id === null || isIdentifierNode((v as { id: unknown }).id));
+
+const isExpressionStatementNode = (v: unknown): v is ExpressionStatementNode =>
+	isAstNode(v) && v.type === "ExpressionStatement";
 
 // ---------------------------------------------------------------- public types
 
@@ -151,48 +165,41 @@ export interface CompileOptions {
 
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-const patternNames = (node: PatternNode, acc: string[] = []): string[] => {
-	switch (node.type) {
-		case "Identifier":
-			acc.push(node.name);
-			return acc;
-		case "ObjectPattern":
-			for (const prop of node.properties) {
-				if (isPatternProperty(prop)) patternNames(prop.value, acc);
-			}
-			return acc;
-		case "ArrayPattern":
-			for (const el of node.elements) {
-				if (el !== null) patternNames(el, acc);
-			}
-			return acc;
-		case "AssignmentPattern":
-			return patternNames(node.left, acc);
-		case "RestElement":
-			return patternNames(node.argument, acc);
-		default:
-			// MemberExpression and anything else binds nothing.
-			return acc;
+const patternNames = (node: unknown, acc: string[] = []): string[] => {
+	if (isIdentifierNode(node)) {
+		acc.push(node.name);
+		return acc;
 	}
+	if (isObjectPatternNode(node)) {
+		for (const prop of node.properties) {
+			if (isPatternPropertyNode(prop)) patternNames(prop.value, acc);
+		}
+		return acc;
+	}
+	if (isArrayPatternNode(node)) {
+		for (const el of node.elements) {
+			if (el !== null) patternNames(el, acc);
+		}
+		return acc;
+	}
+	if (isAssignmentPatternNode(node)) return patternNames(node.left, acc);
+	if (isRestElementNode(node)) return patternNames(node.argument, acc);
+	// MemberExpression and anything else binds nothing.
+	return acc;
 };
 
 const declarationRecord = (stmt: AstNode, code: string): DeclarationRecord[] => {
 	const source = code.slice(stmt.start, stmt.end);
-	switch (stmt.type) {
-		case "VariableDeclaration": {
-			if (!isVariableDeclaration(stmt)) return [];
-			return stmt.declarations.flatMap((d) =>
-				patternNames(d.id).map((name) => ({ name, kind: stmt.kind, source })),
-			);
-		}
-		case "FunctionDeclaration":
-		case "ClassDeclaration": {
-			const id = (stmt as FunctionDeclarationNode | ClassDeclarationNode).id;
-			return id ? [{ name: id.name, kind: stmt.type === "FunctionDeclaration" ? "function" : "class", source }] : [];
-		}
-		default:
-			return [];
+	if (isVariableDeclarationNode(stmt)) {
+		return stmt.declarations.flatMap((d) => patternNames(d.id).map((name) => ({ name, kind: stmt.kind, source })));
 	}
+	if (isNamedDeclarationNode(stmt, "FunctionDeclaration")) {
+		return stmt.id ? [{ name: stmt.id.name, kind: "function", source }] : [];
+	}
+	if (isNamedDeclarationNode(stmt, "ClassDeclaration")) {
+		return stmt.id ? [{ name: stmt.id.name, kind: "class", source }] : [];
+	}
+	return [];
 };
 
 const redeclareError = (name: string): SyntaxError =>
@@ -229,7 +236,7 @@ export const compileScript = (code: string, opts: CompileOptions = {}): Compiled
 	let source = "";
 	let pos = 0;
 	for (const { stmt, records } of perStatement) {
-		if (stmt === last && isExpressionStatement(stmt)) {
+		if (stmt === last && isExpressionStatementNode(stmt)) {
 			source += `${code.slice(pos, stmt.start)}return ${code.slice(stmt.start, stmt.end)};`;
 		} else {
 			source += code.slice(pos, stmt.end);
@@ -238,7 +245,11 @@ export const compileScript = (code: string, opts: CompileOptions = {}): Compiled
 			source +=
 				"\n" +
 				records
-					.map((d) => (IDENT_RE.test(d.name) ? `globalThis.${d.name} = ${d.name};` : `globalThis[${JSON.stringify(d.name)}] = ${d.name};`))
+					.map((d) =>
+						IDENT_RE.test(d.name)
+							? `globalThis.${d.name} = ${d.name};`
+							: `globalThis[${JSON.stringify(d.name)}] = ${d.name};`,
+					)
 					.join("\n");
 		}
 		pos = stmt.end;
