@@ -39,7 +39,7 @@ Add `--real` to also SIGKILL a real `repl-worker.js` mid-exec and prove on a rea
 
 If you change the lifecycle, run this check and only move the **Sync commit** line forward after you have read the diff and confirmed this skill still describes the code at the new commit (module names, event sources, state variants, bound).
 
-**Sync commit: PR3 branch head (lifecycle core with resolve-only settlement)** — re-synced after reading the diff: the checker drives the unchanged public surface, the scenario set is unchanged (alphabet `{end, crash, off, tick}`, max length 3, 85 scenarios), and the property wording still matches the code. A squash merge rehashes the SHA; re-confirm against the merge commit when merging.
+**Sync commit: 453d2d1 (final program merge; lifecycle core with resolve-only settlement)** — re-synced after reading the diff across PR3-PR6: the checker drives the unchanged public surface, the scenario set is unchanged (alphabet `{end, crash, off, tick}`, max length 3, 85 scenarios), and the property wording still matches the code.
 
 ## Covered code
 

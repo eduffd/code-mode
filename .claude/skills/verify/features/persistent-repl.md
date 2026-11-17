@@ -6,7 +6,7 @@ User JavaScript runs in a long-lived worker whose vm context survives across `co
 
 - native-persist: `var`/`function`/`let`/`const` declared in one call readable in the next (worker's shared lexical scope + globalThis capture).
 - redeclare-throws: redeclaring the same binding throws an honest REPL error ("already declared"); the user reassigns without `const`.
-- tla-capture: top-level `await` scripts get their `const`/`let`/function declarations captured into `globalThis` so later calls see them; TLA redeclare shadows instead of throwing.
+- tla-capture: top-level `await` scripts get their `const`/`let`/function declarations captured into `globalThis` so later calls see them; TLA redeclare throws the taught reassign message (changed intentionally in PR4: one redeclare rule on every path).
 - top-level-return: `return` works in both paths; declarations before the `return` are still captured.
 
 ## How to get to it (user POV)
@@ -38,7 +38,7 @@ Preconditions: doctor green; evidence dir created.
     {"name":"tla-read-2","code":"out"}
   ]}
   ```
-  Expect "kept", "kept", "replaced", "replaced" (TLA redeclare shadows; no throw).
+  Expect "kept", "kept", then the redeclare step fails with the taught reassign message and the fourth step still reads "kept" (redeclare throws since PR4).
 - Top-level return with pre-return capture: `{"code":"const keep = 'pre'; return keep;"}` then `{"code":"keep"}` — expect "pre" both times.
 
 ## Gotchas
