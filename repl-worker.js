@@ -180,8 +180,8 @@ const tools = new Proxy(Object.create(null), {
 	get(_t, prop) {
 		// `then` guard: awaiting the proxy itself must not deadlock.
 		if (prop === "then" || typeof prop === "symbol") return undefined;
-		// Loud surface: an unknown name throws with the closest real names
-		// (mistake class 8 — a guessed API must not silently no-op).
+		// Loud surface: an unknown name throws with the closest real names —
+		// a guessed API must not silently no-op.
 		const name = resolveToolName(String(prop));
 		return (args) => callTool(name, args);
 	},

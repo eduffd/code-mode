@@ -72,9 +72,7 @@ check("tla: tool call resolves", r.ok && r.value === "17", JSON.stringify(r));
 r = await exec("out.split('\\n').length");
 check("tla: const persists across calls", r.ok && r.value === "3", JSON.stringify(r.value));
 
-// 5. Single-path redeclare semantics: redeclaring a persisted name throws the
-// taught message (used to shadow-and-update on the old TLA path); plain
-// assignment is the reassignment channel.
+// 5. Single-path redeclare semantics
 r = await exec("const out = 'replaced'; out");
 check(
 	"single-path: redeclare of a persisted const throws taught message",
@@ -124,7 +122,7 @@ check(
 r = await exec("(await tools['mcp__docs__search']({ q: 'x' })) ?? 'called'", { "mcp__docs__search": { hits: 3 } });
 check("tools proxy: raw name callable", r.ok && JSON.parse(r.value).hits === 3, JSON.stringify(r.value));
 
-// 13. for-await at top level (TLA detection)
+// 13. for-await at top level
 r = await exec("let sum = 0; for await (const n of [1,2,3]) { sum += n; } sum");
 check("single-path: for-await runs on the one path", r.ok && r.value === "6", JSON.stringify(r));
 
@@ -135,7 +133,7 @@ r = await exec("await helper(5)");
 check("tla: function persists", r.ok && r.value === "10", JSON.stringify(r.value));
 
 
-// 15. top-level return works in both paths
+// 15. top-level return works on the one path
 r = await exec("return 5;");
 check("return: bare top-level return on the one path", r.ok && r.value === "5", JSON.stringify(r));
 r = await exec("const q = await Promise.resolve(1); return q + 1;");

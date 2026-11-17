@@ -17,7 +17,6 @@ const check = (name, cond, detail = "") => {
 	console.log(`${cond ? "PASS" : "FAIL"}  ${name}${detail && !cond ? ` — ${detail}` : ""}`);
 };
 
-// One fresh REPL, mirroring the worker's per-worker state.
 const sandbox = Object.create(null);
 const ctx = vm.createContext(sandbox);
 const persisted = new Set();
@@ -130,7 +129,6 @@ check("drift: redeclaring a persisted function throws", e !== null, JSON.stringi
 e = redeclare("class counter {}");
 check("drift: redeclaring a persisted class throws", e !== null, JSON.stringify(e?.message));
 
-// The throw happens at compile time: nothing runs, nothing is captured.
 const sandboxKeysBefore = Object.keys(sandbox).length;
 let compileThrew = false;
 try {
@@ -144,7 +142,6 @@ check(
 	JSON.stringify(Object.keys(sandbox)),
 );
 
-// Fresh names still compile; assignment is the reassignment channel.
 r = await run("const fresh = 'ok'; fresh");
 check("drift: fresh name compiles while persisted set is non-empty", r.value === "ok", JSON.stringify(r.value));
 r = await run("counter = 77; counter");
