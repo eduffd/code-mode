@@ -4,6 +4,9 @@
   "description": "Pi extension: persistent REPL (code_mode tool) + session-level tool gating (/code-mode command)",
   "type": "module",
   "main": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
   "dependencies": {
     "acorn": "^8.14.0"
   },
