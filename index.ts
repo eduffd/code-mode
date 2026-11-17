@@ -10,12 +10,11 @@
 //
 // See DESIGN.md.
 
-import { fork, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import type { ChildProcess } from "node:child_process";
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { truncateOutput } from "./output";
+import { killChild, spawnWorker as forkWorker, toolAnswerFrom } from "./worker-host";
 import {
 	DISCOVERY_GLOBALS,
 	DISCOVERY_LISTING,
@@ -37,26 +36,9 @@ interface ExecWaiter {
 const DEFAULT_TIMEOUT_MS = 120_000;
 const CODE_MODE_TOOL = "code_mode";
 
-const workerPath = fileURLToPath(new URL("./repl-worker.js", import.meta.url));
-const packageDir = path.dirname(workerPath);
-
 // ---------------------------------------------------------------- helpers
 
 const toIdentifier = (name: string): string => name.replace(/[^A-Za-z0-9_$]/g, "_");
-
-interface ContentItem {
-	type?: unknown;
-	text?: unknown;
-}
-
-/** Join the text items of a tool result's content array; "" when none. */
-const contentText = (content: unknown): string =>
-	Array.isArray(content)
-		? (content as ContentItem[])
-				.map((item) => (item?.type === "text" && typeof item.text === "string" ? item.text : ""))
-				.filter((s) => s.length > 0)
-				.join("\n")
-		: "";
 
 // ---------------------------------------------------------------- extension
 
@@ -85,10 +67,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 		const proc = worker;
 		worker = null;
 		workerReady = false;
-		if (proc) {
-			proc.removeAllListeners();
-			proc.kill();
-		}
+		if (proc) killChild(proc);
 		for (const [, waiter] of pendingExecs) {
 			clearTimeout(waiter.timer);
 			waiter.reject(new Error("code_mode worker stopped; REPL state was lost"));
@@ -97,40 +76,16 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 	}
 
 	function spawnWorker(): Promise<void> {
-		return new Promise((resolve, reject) => {
-			// Best-effort hardening: the worker gets no fs/cli access except this
-			// package dir (worker source + acorn dependency live there).
-			const flags = permissionFlagsSupported ? ["--permission", `--allow-fs-read=${packageDir}`] : [];
-			const proc = fork(workerPath, [], {
-				cwd: packageDir,
-				execArgv: flags,
-				stdio: ["ignore", "ignore", "pipe", "ipc"],
-			});
-			const stderr: string[] = [];
-			proc.stderr?.on("data", (chunk: Buffer) => {
-				if (stderr.length < 20) stderr.push(chunk.toString());
-			});
-			const fail = (message: string) => {
-				clearTimeout(bootTimer);
-				proc.removeAllListeners();
-				proc.kill();
-				reject(new Error(`${message}${stderr.length > 0 ? `: ${stderr.join("")}` : ""}`));
-			};
-			const bootTimer = setTimeout(() => fail("code_mode worker did not start"), 5_000);
-			proc.once("message", (msg: unknown) => {
-				if (isWorkerOutMessage(msg) && msg.type === "ready") {
-					clearTimeout(bootTimer);
-					worker = proc;
-					workerReady = true;
-					proc.on("message", onWorkerMessage);
-					proc.once("exit", () => {
-						if (worker === proc) killWorker();
-					});
-					resolve();
-				}
-			});
-			proc.once("error", (err: Error) => fail(`code_mode worker failed to spawn: ${err.message}`));
-			proc.once("exit", () => fail("code_mode worker exited during boot"));
+		return forkWorker({
+			permissionFlags: permissionFlagsSupported,
+			onReady: (proc) => {
+				worker = proc;
+				workerReady = true;
+				proc.on("message", onWorkerMessage);
+				proc.once("exit", () => {
+					if (worker === proc) killWorker();
+				});
+			},
 		});
 	}
 
@@ -168,15 +123,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 		let payload: { ok: true; value: unknown } | { ok: false; error: string };
 		try {
 			if (!activeToolCtx) throw new Error("no active code_mode context");
-			const outcome = await activeToolCtx.executeTool(name, args);
-			const result = outcome.result;
-			if (outcome.isError) {
-				payload = { ok: false, error: contentText(result?.content) || "tool call failed" };
-			} else if (result?.structuredContent !== undefined) {
-				payload = { ok: true, value: result.structuredContent };
-			} else {
-				payload = { ok: true, value: contentText(result?.content) };
-			}
+			payload = toolAnswerFrom(await activeToolCtx.executeTool(name, args));
 		} catch (err) {
 			payload = { ok: false, error: err instanceof Error ? err.message : String(err) };
 		}
