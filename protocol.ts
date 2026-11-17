@@ -45,6 +45,12 @@ export type WorkerOutMessage =
 	| { type: "toolCall"; callId: number; name: string; args: unknown }
 	| { type: "end"; id: number; ok: boolean; value?: string; error?: WorkerError; output: OutputItem[] };
 
+/** One answered nested tool call, journaled per exec for interrupted-run reporting. */
+export interface ToolCallRecord {
+	name: string;
+	ok: boolean;
+}
+
 /** What the host reports back to the model for one `code_mode` call. */
 export interface ExecOutcome {
 	ok: boolean;
@@ -53,6 +59,8 @@ export interface ExecOutcome {
 	output: OutputItem[];
 	/** True when the worker died or was killed around this call: earlier REPL state is gone. */
 	stateLost: boolean;
+	/** Tool calls answered before the run was interrupted; on worker-stopped/timeout outcomes when any landed. */
+	journal?: readonly ToolCallRecord[];
 }
 
 /** Guard for the messages a worker may send to the host. */
