@@ -149,6 +149,66 @@ check("drift: plain assignment reassigns a persisted name", r.value === 77, JSON
 r = await run("counter");
 check("drift: assignment persists across execs", r.value === 77, JSON.stringify(r.value));
 
+// ---- live capture: the accessor reflects the binding, both directions
+
+r = await run("var m = 1; function bump() { m += 1; return m; } bump()");
+check(
+	"drift: in-exec mutation after the declaration line is live on globalThis",
+	r.value === 2 && sandbox.m === 2,
+	JSON.stringify({ value: r.value, m: sandbox.m }),
+);
+r = await run("bump()");
+check("drift: captured closure mutates its original binding across execs", r.value === 3, JSON.stringify(r.value));
+r = await run("m");
+check("drift: bare-name read in a later exec sees the mutated binding", r.value === 3, JSON.stringify(r.value));
+r = await run("m = 40; globalThis.m");
+check("drift: bare-name write reaches the accessor setter", r.value === 40, JSON.stringify(r.value));
+r = await run("globalThis.m = 50; m");
+check("drift: globalThis write reaches the same binding", r.value === 50, JSON.stringify(r.value));
+
+r = await run("let live = 1; live = 5; live");
+check(
+	"drift: reassignment after the splice stays live in-exec",
+	r.value === 5 && sandbox.live === 5,
+	JSON.stringify({ value: r.value, live: sandbox.live }),
+);
+
+r = await run("var dup = 1; var dup = 2; dup");
+const dupDesc = Object.getOwnPropertyDescriptor(sandbox, "dup");
+check(
+	"drift: repeated declarations share one live accessor",
+	r.value === 2 &&
+		sandbox.dup === 2 &&
+		typeof dupDesc?.get === "function" &&
+		typeof dupDesc?.set === "function",
+	JSON.stringify({ value: r.value, dup: sandbox.dup, desc: dupDesc && Object.keys(dupDesc) }),
+);
+
+r = await run("const cc = 'v'; cc");
+check(
+	"drift: const captured through its cell accessor",
+	r.value === "v" && sandbox.cc === "v",
+	JSON.stringify({ value: r.value, cc: sandbox.cc }),
+);
+r = await run("cc = 'w'; cc");
+check("drift: taught reassign channel still updates a captured const", r.value === "w", JSON.stringify(r.value));
+r = await run("cc");
+check("drift: reassigned const persists", r.value === "w", JSON.stringify(r.value));
+
+let boomThrew = false;
+try {
+	await run("const b1 = notDefined(); b1");
+} catch {
+	boomThrew = true;
+}
+check(
+	"drift: failed initializer installs no accessor",
+	boomThrew && !("b1" in sandbox),
+	JSON.stringify(Object.keys(sandbox)),
+);
+r = await run("let b1 = 9; b1");
+check("drift: name from the failed exec can be declared fresh", r.value === 9, JSON.stringify(r.value));
+
 // Same-script duplicate declarations stay acorn's honest error.
 let dup = null;
 try {

@@ -10,7 +10,9 @@
 // - top-level `await` and `return` work (the IIFE provides them);
 // - the last top-level expression statement is returned, so completion values
 //   behave like a REPL (`1 + 1` yields 2);
-// - top-level declarations persist: each is captured to `globalThis.<name>`;
+// - top-level declarations persist: each installs a live accessor on
+//   `globalThis` closed over the IIFE-local binding, so reads and writes via
+//   the bare name (any exec) or via `globalThis` see the current value;
 // - redeclaring a name an earlier exec already captured throws the taught
 //   error ("... has already been declared — reassign without const instead").
 //   Plain assignment (`x = 2`) is the reassignment channel.
@@ -163,8 +165,6 @@ export interface CompileOptions {
 
 // ---------------------------------------------------------------- helpers
 
-const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
 const patternNames = (node: unknown, acc: string[] = []): string[] => {
 	if (isIdentifierNode(node)) {
 		acc.push(node.name);
@@ -227,30 +227,36 @@ export const compileScript = (code: string, opts: CompileOptions = {}): Compiled
 		}
 	}
 
-	// Splice `globalThis.<name> = <name>;` after each top-level declaration.
-	// The original declaration stays as-is (it works inside the IIFE); the
-	// appended lines copy the binding into persistent globalThis storage. The
-	// last top-level expression statement becomes an explicit `return` so the
-	// IIFE reproduces the native Script completion-value semantics.
+	// Splice a live accessor after each top-level declaration. get/set close
+	// over the IIFE-local binding, so every later read and write — bare name in
+	// any exec, or via globalThis — sees the current value, including mutations
+	// that happen after this line (function bodies, loops, reassignment). const
+	// bindings are frozen: their accessor holds a cell initialized from the
+	// binding, so the taught reassign channel still updates the persisted value
+	// while the binding itself stays truthful. Names come from IdentifierNode
+	// (patternNames), so the bare-name reference is always valid source, and
+	// JSON.stringify makes the defineProperty key name-agnostic. The splice is
+	// inline: an initializer that throws installs no accessor, and repeated
+	// declarations of one name share the first accessor (var/function and
+	// repeated var share one binding, so the first point covers both).
 	const last = statements[statements.length - 1];
 	let source = "";
 	let pos = 0;
+	const spliced = new Set<string>();
 	for (const { stmt, records } of perStatement) {
 		if (stmt === last && isExpressionStatementNode(stmt)) {
 			source += `${code.slice(pos, stmt.start)}return ${code.slice(stmt.start, stmt.end)};`;
 		} else {
 			source += code.slice(pos, stmt.end);
 		}
-		if (records.length > 0) {
+		for (const d of records) {
+			if (spliced.has(d.name)) continue;
+			spliced.add(d.name);
+			const key = JSON.stringify(d.name);
 			source +=
-				"\n" +
-				records
-					.map((d) =>
-						IDENT_RE.test(d.name)
-							? `globalThis.${d.name} = ${d.name};`
-							: `globalThis[${JSON.stringify(d.name)}] = ${d.name};`,
-					)
-					.join("\n");
+				d.kind === "const"
+					? `\n{ let cell = ${d.name}; Object.defineProperty(globalThis, ${key}, { get: () => cell, set: (v) => { cell = v; }, configurable: true, enumerable: true }); }`
+					: `\nObject.defineProperty(globalThis, ${key}, { get: () => ${d.name}, set: (v) => { ${d.name} = v; }, configurable: true, enumerable: true });`;
 		}
 		pos = stmt.end;
 	}

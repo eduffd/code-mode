@@ -187,7 +187,29 @@ check(
 	JSON.stringify(r.output),
 );
 
-// 18. Disconnect self-exit: closing the channel ends the worker (no orphan);
+// 18. Live capture regression (acceptance finding): with copy-once capture,
+// mutations after the declaration line left the captured global stale —
+// inc() bumped only the IIFE-local binding, so a later exec read 1 forever.
+r = await exec("var acc = 1; function tick() { acc += 1; return acc; } tick()");
+check("live-capture: var+function mutation returns the updated value", r.ok && r.value === "2", JSON.stringify(r.value));
+r = await exec("acc");
+check("live-capture: mutated binding is what a later exec reads", r.ok && r.value === "2", JSON.stringify(r.value));
+r = await exec("tick(); tick(); acc");
+check("live-capture: closure keeps mutating the original binding across execs", r.ok && r.value === "4", JSON.stringify(r.value));
+r = await exec("acc = 40; acc");
+check("live-capture: cross-exec reassignment persists (setter channel)", r.ok && r.value === "40", JSON.stringify(r.value));
+r = await exec("acc");
+check("live-capture: reassigned value survives to the next exec", r.ok && r.value === "40", JSON.stringify(r.value));
+r = await exec("globalThis.acc = 41; acc");
+check("live-capture: globalThis write is visible via the bare name", r.ok && r.value === "41", JSON.stringify(r.value));
+r = await exec("let acc = 1;");
+check(
+	"live-capture: redeclaring a live-captured name still throws the taught message",
+	!r.ok && /already been declared/.test(r.error?.message ?? "") && /reassign without const/.test(r.error?.message ?? ""),
+	r.error?.message,
+);
+
+// 19. Disconnect self-exit: closing the channel ends the worker (no orphan);
 // fallback kills the recorded pid only.
 const childPid = proc.pid;
 const exited = new Promise((resolve) => proc.once("exit", (code) => resolve({ code })));
