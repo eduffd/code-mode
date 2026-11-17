@@ -5,18 +5,13 @@
 // bindings (var/function via globalThis, let/const/class via the realm's
 // shared global lexical scope) persist across execs.
 //
-// Protocol (fork IPC), all JSON:
-//   in:  { type: "exec", id, code, tools: [{ name, description, inputSchema? }] }
-//   in:  { type: "toolResult", callId, ok, value?, error? }
-//   out: { type: "ready" }
-//   out: { type: "toolCall", callId, name, args }
-//   out: { type: "end", id, ok, value?, error?, output: OutputItem[] }
-//
-// OutputItem: { type: "text", text, console? } | { type: "image", data, mimeType }
+// The fork-IPC protocol (in: exec/toolResult/ping, out: ready/toolCall/end)
+// lives in protocol.ts — both sides import it from there.
 
 import vm from "node:vm";
 import { format, inspect } from "node:util";
 import { parse } from "acorn";
+import { isWorkerInMessage } from "./protocol.ts";
 
 const EXIT = Symbol("code_mode.exit");
 
@@ -244,7 +239,7 @@ async function runExec(msg) {
 // ---------------------------------------------------------------- message loop
 
 process.on("message", (msg) => {
-	if (!msg || typeof msg !== "object") return;
+	if (!isWorkerInMessage(msg)) return;
 	switch (msg.type) {
 		case "exec":
 			runExec(msg).catch((e) => {

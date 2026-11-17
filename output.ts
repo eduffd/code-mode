@@ -1,10 +1,6 @@
 // output.ts — output budget for code_mode script results.
 
-export interface OutputItem {
-	type: "text";
-	text: string;
-	console?: true;
-}
+import type { OutputItem } from "./protocol";
 
 const MAX_TOTAL_CHARS = 20_000;
 const HEAD_CHARS = 14_000;
