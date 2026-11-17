@@ -252,7 +252,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 				};
 			}
 			const id = ++execSeq;
-			return new Promise((resolve) => {
+			return new Promise((resolve, reject) => {
 				const timer = setTimeout(() => {
 					pendingExecs.delete(id);
 					// Hard timeout: kill the worker; a spinning script cannot be interrupted otherwise.
@@ -266,7 +266,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 						output: [],
 					});
 				}, timeoutMs);
-				pendingExecs.set(id, { resolve, reject: () => undefined, timer });
+				pendingExecs.set(id, { resolve, reject, timer });
 				proc.send({ type: "exec", id, code, tools: toolDeclarations() });
 			});
 		});
