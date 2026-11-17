@@ -7,8 +7,8 @@
 
 import vm from "node:vm";
 import { format, inspect } from "node:util";
-import { parse } from "acorn";
 import { isWorkerInMessage } from "./protocol.ts";
+import { compileScript } from "./compile.ts";
 
 const EXIT = Symbol("code_mode.exit");
 
@@ -20,6 +20,7 @@ const ctx = vm.createContext(sandbox);
 let out = []; // output items for the running exec
 let callSeq = 0;
 const pendingCalls = new Map(); // callId -> { resolve, reject }
+const persisted = new Set(); // top-level names earlier execs captured to globalThis
 
 // ---------------------------------------------------------------- output helpers
 
@@ -94,98 +95,6 @@ function setSearchGlobals(toolDecls) {
 	};
 }
 
-// ---------------------------------------------------------------- compilation
-
-// Try the direct path first: a plain vm.Script compiles when the code has no
-// top-level await, and then native semantics apply (let/const persist via the
-// realm's lexical scope; redeclaring throws honest REPL errors).
-// If the failure is precisely a top-level await, rewrite top-level
-// declarations into globalThis assignments and run inside an async IIFE.
-function compile(code) {
-	try {
-		new vm.Script(code);
-		return { kind: "script", source: code };
-	} catch (scriptError) {
-		// Any Script failure may be a top-level await (plain `await ...` says "await is
-		// only valid in async", `for await` says "Unexpected reserved word") or a top-level
-		// `return` ("Illegal return statement"). Acorn with allowAwaitOutsideFunction and
-		// allowReturnOutsideFunction parses both; if it agrees the code is valid, take the
-		// rewrite path (the async IIFE supports return). Otherwise the Script error is the
-		// honest one — rethrow it.
-		try {
-			parse(code, { ecmaVersion: "latest", allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true });
-		} catch {
-			throw scriptError;
-		}
-		return { kind: "async", source: `(async () => {\n${rewriteTopLevel(code)}\n})()` };
-	}
-}
-
-const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-function patternNames(node, acc = []) {
-	if (!node) return acc;
-	switch (node.type) {
-		case "Identifier":
-			acc.push(node.name);
-			break;
-		case "ObjectPattern":
-			for (const prop of node.properties) patternNames(prop.type === "Property" ? prop.value : prop.argument, acc);
-			break;
-		case "ArrayPattern":
-			for (const el of node.elements) patternNames(el, acc);
-			break;
-		case "AssignmentPattern":
-			patternNames(node.left, acc);
-			break;
-		case "RestElement":
-			patternNames(node.argument, acc);
-			break;
-		// MemberExpression and anything else: not a binding — skip.
-	}
-	return acc;
-}
-
-function capturedNames(stmt) {
-	switch (stmt.type) {
-		case "VariableDeclaration":
-			return stmt.declarations.flatMap((d) => patternNames(d.id));
-		case "FunctionDeclaration":
-		case "ClassDeclaration":
-			return stmt.id ? [stmt.id.name] : [];
-		default:
-			return [];
-	}
-}
-
-// Splice `globalThis.<name> = <name>;` after each top-level declaration.
-// The original declaration stays as-is (it works inside the IIFE); the
-// appended lines copy the bindings into persistent globalThis storage.
-// The last top-level expression statement becomes an explicit `return` so the
-// async IIFE reproduces the native Script completion-value semantics.
-function rewriteTopLevel(code) {
-	const ast = parse(code, { ecmaVersion: "latest", allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true });
-	const statements = ast.body;
-	const lastStatement = statements[statements.length - 1];
-	let result = "";
-	let pos = 0;
-	for (const stmt of statements) {
-		const names = capturedNames(stmt);
-		const isReturned = stmt === lastStatement && stmt.type === "ExpressionStatement";
-		result += isReturned ? `${code.slice(pos, stmt.start)}return ${code.slice(stmt.start, stmt.end)};` : code.slice(pos, stmt.end);
-		if (names.length > 0) {
-			result +=
-				"\n" +
-				names
-					.map((n) => (IDENT_RE.test(n) ? `globalThis.${n} = ${n};` : `globalThis[${JSON.stringify(n)}] = ${n};`))
-					.join("\n");
-		}
-		pos = stmt.end;
-	}
-	result += code.slice(pos);
-	return result;
-}
-
 // ---------------------------------------------------------------- exec runner
 
 function serializeValue(v) {
@@ -215,12 +124,19 @@ async function runExec(msg) {
 	let value;
 	let error;
 	try {
-		const compiled = compile(String(msg.code ?? ""));
-		const raw = vm.runInContext(compiled.source, ctx, {
-			filename: "code_mode.js",
-			breakOnSigint: true,
-		});
-		value = compiled.kind === "async" ? await raw : raw;
+		// ONE compile path: every script goes through the acorn rewrite
+		// (compile.ts), so compile semantics are identical for every shape.
+		const compiled = compileScript(String(msg.code ?? ""), { persistedNames: persisted });
+		try {
+			value = await vm.runInContext(compiled.source, ctx, {
+				filename: "code_mode.js",
+				breakOnSigint: true,
+			});
+		} finally {
+			// Record captures that actually landed (a script that threw midway
+			// may still have captured earlier declarations — native semantics).
+			for (const name of compiled.capturedNames) if (name in sandbox) persisted.add(name);
+		}
 	} catch (e) {
 		if (e && e[EXIT]) {
 			value = e.value;

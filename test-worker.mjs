@@ -75,11 +75,19 @@ check("tla: tool call resolves", r.ok && r.value === "17", JSON.stringify(r));
 r = await exec("out.split('\\n').length");
 check("tla: const persists across calls", r.ok && r.value === "3", JSON.stringify(r.value));
 
-// 5. TLA redeclare does NOT throw (shadow semantics), and updates globalThis
+// 5. Single-path redeclare semantics: redeclaring a persisted name throws the
+// taught message (used to shadow-and-update on the old TLA path); plain
+// assignment is the reassignment channel.
 r = await exec("const out = 'replaced'; out");
-check("tla: redeclare allowed, value updated", r.ok && r.value === "replaced", JSON.stringify(r.value));
+check(
+	"single-path: redeclare of a persisted const throws taught message",
+	!r.ok && /already been declared/.test(r.error?.message ?? "") && /reassign without const/.test(r.error?.message ?? ""),
+	r.error?.message,
+);
+r = await exec("out = 'replaced'");
+check("single-path: assignment reassigns the persisted name", r.ok && r.value === "replaced", JSON.stringify(r.value));
 r = await exec("out");
-check("tla: reassign visible in later native call", r.ok && r.value === "replaced", JSON.stringify(r.value));
+check("single-path: reassign visible in later call", r.ok && r.value === "replaced", JSON.stringify(r.value));
 
 // 6. Destructured const with TLA
 r = await exec("const { x, y } = await Promise.resolve({ x: 4, y: 9 }); x + y");
@@ -121,7 +129,7 @@ check("tools proxy: raw name callable", r.ok && JSON.parse(r.value).hits === 3, 
 
 // 13. for-await at top level (TLA detection)
 r = await exec("let sum = 0; for await (const n of [1,2,3]) { sum += n; } sum");
-check("tla: for-await detected and rewritten", r.ok && r.value === "6", JSON.stringify(r));
+check("single-path: for-await runs on the one path", r.ok && r.value === "6", JSON.stringify(r));
 
 // 14. top-level function declaration with TLA + persistence
 r = await exec("async function helper(v) { return v * 2; }\nconst doubled = await helper(21); doubled");
@@ -132,7 +140,7 @@ check("tla: function persists", r.ok && r.value === "10", JSON.stringify(r.value
 
 // 15. top-level return works in both paths
 r = await exec("return 5;");
-check("return: native path rerouted to rewrite", r.ok && r.value === "5", JSON.stringify(r));
+check("return: bare top-level return on the one path", r.ok && r.value === "5", JSON.stringify(r));
 r = await exec("const q = await Promise.resolve(1); return q + 1;");
 check("return: TLA path", r.ok && r.value === "2", JSON.stringify(r));
 r = await exec("const keep = 'pre';\nreturn keep;");
