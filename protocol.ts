@@ -86,8 +86,6 @@ export const isWorkerInMessage = (m: unknown): m is WorkerInMessage => {
 	return t === "ping";
 };
 
-// ---------------------------------------------------------------- discovery
-
 /**
  * The globals the worker injects for tool discovery. The host steers on the
  * same names (`reachesTools`, tool descriptions), so both sides derive from

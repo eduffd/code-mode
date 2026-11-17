@@ -1,5 +1,4 @@
 // Standalone test harness: forks repl-worker.js and exercises the protocol.
-// Worker -> host messages are validated through the shared protocol guard.
 import { fork } from "node:child_process";
 import path from "node:path";
 import { isWorkerOutMessage } from "./protocol.ts";

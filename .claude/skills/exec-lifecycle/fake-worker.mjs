@@ -9,9 +9,6 @@
 // CM_FAKE_BOOT_CRASH=1 models a broken first boot with permission flags:
 // the flagged spawn dies (execArgv carries --permission); the plain retry
 // spawned without flags boots normally. No fs access needed.
-//
-// Its protocol-bound sends (ready/end) are checked against the shared guard
-// in protocol.ts, so the stand-in cannot drift from the real shapes.
 
 import { isWorkerOutMessage } from "../../../protocol.ts";
 

@@ -4,9 +4,6 @@
 // whole life; every script runs against that same context, so top-level
 // bindings (var/function via globalThis, let/const/class via the realm's
 // shared global lexical scope) persist across execs.
-//
-// The fork-IPC protocol (in: exec/toolResult/ping, out: ready/toolCall/end)
-// lives in protocol.ts — both sides import it from there.
 
 import vm from "node:vm";
 import { format, inspect } from "node:util";
