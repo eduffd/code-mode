@@ -7,8 +7,8 @@
 
 import vm from "node:vm";
 import { format, inspect } from "node:util";
-import { parse } from "acorn";
-import { isWorkerInMessage } from "./protocol.ts";
+import { isWorkerInMessage, toIdentifier } from "./protocol.ts";
+import { compileScript } from "./compile.ts";
 
 const EXIT = Symbol("code_mode.exit");
 
@@ -20,6 +20,7 @@ const ctx = vm.createContext(sandbox);
 let out = []; // output items for the running exec
 let callSeq = 0;
 const pendingCalls = new Map(); // callId -> { resolve, reject }
+const persisted = new Set(); // top-level names earlier execs captured to globalThis
 
 // ---------------------------------------------------------------- output helpers
 
@@ -53,7 +54,121 @@ function exit(value) {
 
 // ---------------------------------------------------------------- tool bridge
 
+// Per-exec tool registry: the raw ToolDecl list, plus the identifier form
+// (`web.search` -> `web_search`) derived from it. Both forms resolve; on a
+// collision the raw name wins.
+const toolByRaw = new Map();
+const rawByIdentifier = new Map();
+
+const installTools = (decls) => {
+	toolByRaw.clear();
+	rawByIdentifier.clear();
+	for (const t of decls) {
+		toolByRaw.set(t.name, t);
+		const id = toIdentifier(t.name);
+		if (!rawByIdentifier.has(id)) rawByIdentifier.set(id, t.name);
+	}
+	sandbox.ALL_TOOLS = Object.freeze(decls.map((t) => t.name));
+	sandbox.searchTools = (query) => {
+		const q = String(query).toLowerCase();
+		return decls
+			.filter((t) => t.name.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q))
+			.map((t) => ({ name: t.name, description: t.description ?? "" }));
+	};
+	sandbox.describeTool = (name) => {
+		const t = toolByRaw.get(String(name));
+		return t ? { name: t.name, description: t.description ?? "", inputSchema: t.inputSchema } : undefined;
+	};
+	sandbox.describeNamespace = (name) => {
+		// Namespaces: MCP tools are `mcp__<server>__<tool>`; group by that prefix.
+		const prefix = String(name);
+		const members = decls.filter((t) => t.name.startsWith(`${prefix}__`));
+		if (members.length === 0) return undefined;
+		return { name: prefix, tools: members.map((t) => ({ name: t.name, description: t.description ?? "" })) };
+	};
+};
+
+// ---- suggestions: bounded Levenshtein, dependency-free
+
+const editDistance = (a, b, cap) => {
+	if (Math.abs(a.length - b.length) > cap) return cap + 1;
+	let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= a.length; i += 1) {
+		let diag = prev[0];
+		prev[0] = i;
+		const cur = [i];
+		let rowMin = i;
+		for (let j = 1; j <= b.length; j += 1) {
+			const d = Math.min(prev[j] + 1, cur[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+			diag = prev[j];
+			cur[j] = d;
+			if (d < rowMin) rowMin = d;
+		}
+		if (rowMin > cap) return cap + 1;
+		prev = cur;
+	}
+	return prev[b.length];
+};
+
+const SUGGEST_LIMIT = 3;
+
+/** Candidates within a tolerance that shrinks for short names; a prefix relation ("timeout_secs" -> "timeout") always counts. */
+const closestNames = (target, candidates) => {
+	const cap = Math.max(2, Math.ceil(target.length / 2));
+	const scored = [];
+	for (const c of candidates) {
+		if (c === target) continue;
+		const related = c.startsWith(target) || target.startsWith(c);
+		const d = related ? Math.min(editDistance(target, c, cap), 2) : editDistance(target, c, cap);
+		if (d <= cap) scored.push({ c, d });
+	}
+	scored.sort((x, y) => x.d - y.d || x.c.length - y.c.length);
+	return scored.slice(0, SUGGEST_LIMIT).map((s) => s.c);
+};
+
+const unknownToolError = (prop) => {
+	const suggestions = closestNames(prop, toolByRaw.keys());
+	if (suggestions.length > 0) {
+		return new Error(
+			`Unknown tool "${prop}". Did you mean ${suggestions.map((s) => `"${s}"`).join(", ")}? Use searchTools() to list tools.`,
+		);
+	}
+	const available = [...toolByRaw.keys()];
+	const shown = available.slice(0, 6).join(", ") + (available.length > 6 ? ", …" : "");
+	return new Error(`Unknown tool "${prop}". Use searchTools() to list tools.${shown ? ` Available: ${shown}` : ""}`);
+};
+
+const resolveToolName = (prop) => {
+	if (toolByRaw.has(prop)) return prop;
+	const mapped = rawByIdentifier.get(prop);
+	if (mapped !== undefined) return mapped;
+	throw unknownToolError(prop);
+};
+
+const isPlainObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Additive warnings for argument keys the tool's inputSchema does not know. Never blocks the call. */
+const paramWarnings = (decl, args) => {
+	const schema = decl?.inputSchema;
+	if (!isPlainObject(schema) || !isPlainObject(schema.properties) || !isPlainObject(args)) return [];
+	const known = Object.keys(schema.properties);
+	const warnings = [];
+	for (const key of Object.keys(args)) {
+		if (known.includes(key)) continue;
+		const [suggestion] = closestNames(key, known);
+		warnings.push(
+			suggestion
+				? `unknown parameter "${key}" for tool "${decl.name}" — did you mean "${suggestion}"?`
+				: `unknown parameter "${key}" for tool "${decl.name}" (known: ${known.join(", ") || "none"})`,
+		);
+	}
+	return warnings;
+};
+
 function callTool(name, args) {
+	for (const w of paramWarnings(toolByRaw.get(name), args)) {
+		out.push({ type: "text", text: `[codemode] ${w}` });
+	}
 	const callId = ++callSeq;
 	return new Promise((resolve, reject) => {
 		pendingCalls.set(callId, { resolve, reject });
@@ -65,126 +180,14 @@ const tools = new Proxy(Object.create(null), {
 	get(_t, prop) {
 		// `then` guard: awaiting the proxy itself must not deadlock.
 		if (prop === "then" || typeof prop === "symbol") return undefined;
-		return (args) => callTool(String(prop), args);
+		// Loud surface: an unknown name throws with the closest real names —
+		// a guessed API must not silently no-op.
+		const name = resolveToolName(String(prop));
+		return (args) => callTool(name, args);
 	},
 });
 
 Object.assign(sandbox, { tools, text, image, exit });
-
-// ---------------------------------------------------------------- discovery globals
-
-function setSearchGlobals(toolDecls) {
-	sandbox.ALL_TOOLS = Object.freeze(toolDecls.map((t) => t.name));
-	sandbox.searchTools = (query) => {
-		const q = String(query).toLowerCase();
-		return toolDecls
-			.filter((t) => t.name.toLowerCase().includes(q) || (t.description ?? "").toLowerCase().includes(q))
-			.map((t) => ({ name: t.name, description: t.description ?? "" }));
-	};
-	sandbox.describeTool = (name) => {
-		const t = toolDecls.find((d) => d.name === String(name));
-		return t ? { name: t.name, description: t.description ?? "", inputSchema: t.inputSchema } : undefined;
-	};
-	sandbox.describeNamespace = (name) => {
-		// Namespaces: MCP tools are `mcp__<server>__<tool>`; group by that prefix.
-		const prefix = String(name);
-		const members = toolDecls.filter((t) => t.name.startsWith(`${prefix}__`));
-		if (members.length === 0) return undefined;
-		return { name: prefix, tools: members.map((t) => ({ name: t.name, description: t.description ?? "" })) };
-	};
-}
-
-// ---------------------------------------------------------------- compilation
-
-// Try the direct path first: a plain vm.Script compiles when the code has no
-// top-level await, and then native semantics apply (let/const persist via the
-// realm's lexical scope; redeclaring throws honest REPL errors).
-// If the failure is precisely a top-level await, rewrite top-level
-// declarations into globalThis assignments and run inside an async IIFE.
-function compile(code) {
-	try {
-		new vm.Script(code);
-		return { kind: "script", source: code };
-	} catch (scriptError) {
-		// Any Script failure may be a top-level await (plain `await ...` says "await is
-		// only valid in async", `for await` says "Unexpected reserved word") or a top-level
-		// `return` ("Illegal return statement"). Acorn with allowAwaitOutsideFunction and
-		// allowReturnOutsideFunction parses both; if it agrees the code is valid, take the
-		// rewrite path (the async IIFE supports return). Otherwise the Script error is the
-		// honest one — rethrow it.
-		try {
-			parse(code, { ecmaVersion: "latest", allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true });
-		} catch {
-			throw scriptError;
-		}
-		return { kind: "async", source: `(async () => {\n${rewriteTopLevel(code)}\n})()` };
-	}
-}
-
-const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
-function patternNames(node, acc = []) {
-	if (!node) return acc;
-	switch (node.type) {
-		case "Identifier":
-			acc.push(node.name);
-			break;
-		case "ObjectPattern":
-			for (const prop of node.properties) patternNames(prop.type === "Property" ? prop.value : prop.argument, acc);
-			break;
-		case "ArrayPattern":
-			for (const el of node.elements) patternNames(el, acc);
-			break;
-		case "AssignmentPattern":
-			patternNames(node.left, acc);
-			break;
-		case "RestElement":
-			patternNames(node.argument, acc);
-			break;
-		// MemberExpression and anything else: not a binding — skip.
-	}
-	return acc;
-}
-
-function capturedNames(stmt) {
-	switch (stmt.type) {
-		case "VariableDeclaration":
-			return stmt.declarations.flatMap((d) => patternNames(d.id));
-		case "FunctionDeclaration":
-		case "ClassDeclaration":
-			return stmt.id ? [stmt.id.name] : [];
-		default:
-			return [];
-	}
-}
-
-// Splice `globalThis.<name> = <name>;` after each top-level declaration.
-// The original declaration stays as-is (it works inside the IIFE); the
-// appended lines copy the bindings into persistent globalThis storage.
-// The last top-level expression statement becomes an explicit `return` so the
-// async IIFE reproduces the native Script completion-value semantics.
-function rewriteTopLevel(code) {
-	const ast = parse(code, { ecmaVersion: "latest", allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true });
-	const statements = ast.body;
-	const lastStatement = statements[statements.length - 1];
-	let result = "";
-	let pos = 0;
-	for (const stmt of statements) {
-		const names = capturedNames(stmt);
-		const isReturned = stmt === lastStatement && stmt.type === "ExpressionStatement";
-		result += isReturned ? `${code.slice(pos, stmt.start)}return ${code.slice(stmt.start, stmt.end)};` : code.slice(pos, stmt.end);
-		if (names.length > 0) {
-			result +=
-				"\n" +
-				names
-					.map((n) => (IDENT_RE.test(n) ? `globalThis.${n} = ${n};` : `globalThis[${JSON.stringify(n)}] = ${n};`))
-					.join("\n");
-		}
-		pos = stmt.end;
-	}
-	result += code.slice(pos);
-	return result;
-}
 
 // ---------------------------------------------------------------- exec runner
 
@@ -210,17 +213,24 @@ function serializeError(e) {
 async function runExec(msg) {
 	out = [];
 	sandbox.console = makeConsole();
-	setSearchGlobals(msg.tools ?? []);
+	installTools(msg.tools ?? []);
 	let ok = true;
 	let value;
 	let error;
 	try {
-		const compiled = compile(String(msg.code ?? ""));
-		const raw = vm.runInContext(compiled.source, ctx, {
-			filename: "code_mode.js",
-			breakOnSigint: true,
-		});
-		value = compiled.kind === "async" ? await raw : raw;
+		// ONE compile path: every script goes through the acorn rewrite
+		// (compile.ts), so compile semantics are identical for every shape.
+		const compiled = compileScript(String(msg.code ?? ""), { persistedNames: persisted });
+		try {
+			value = await vm.runInContext(compiled.source, ctx, {
+				filename: "code_mode.js",
+				breakOnSigint: true,
+			});
+		} finally {
+			// Record captures that actually landed (a script that threw midway
+			// may still have captured earlier declarations — native semantics).
+			for (const name of compiled.capturedNames) if (name in sandbox) persisted.add(name);
+		}
 	} catch (e) {
 		if (e && e[EXIT]) {
 			value = e.value;
@@ -271,5 +281,23 @@ process.on("uncaughtException", (e) => {
 process.on("unhandledRejection", (e) => {
 	process.stderr.write(`code-mode worker unhandled rejection: ${e?.stack ?? e}\n`);
 });
+
+// The host owns our channel; when it drops (host crash, channel close, kill),
+// self-exit so no orphan worker lingers. Safe since the lifecycle core
+// settles every pending exec when the worker dies.
+process.on("disconnect", () => process.exit(0));
+
+// JIT warmup: the first execs pay for V8 JIT-ing acorn and the vm run
+// machinery (~1.2 ms on exec 1, tens of µs for the next few hundred). Pre-run
+// the one compile path at boot so exec 1 costs what exec 1000 costs — the
+// 20-exec round-trip budget cannot absorb the ramp. Unique sources defeat
+// V8's compilation cache (that is the point: warm the parser, not the cache);
+// expression-only scripts capture nothing, so the sandbox stays clean.
+// ~2000 parses ≈ single-digit ms of boot, against a 5 s handshake.
+for (let i = 0; i < 2000; i += 1) compileScript(`${i} + 1`, { persistedNames: new Set() });
+for (let i = 0; i < 25; i += 1) {
+	const warm = compileScript(`${i} + 1`, { persistedNames: new Set() });
+	vm.runInContext(warm.source, ctx, { filename: "code_mode.js", breakOnSigint: true });
+}
 
 process.send({ type: "ready" });
