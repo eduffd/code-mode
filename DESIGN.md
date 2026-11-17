@@ -120,10 +120,11 @@ Mirror built-in codemode: cap output chars/items; head+tail truncation with an e
 ```
 /Users/edufd/code/code-mode/
 ├── package.json          ← name: code-mode, deps: acorn; main: index.ts
-├── index.ts              ← extension entry: registerTool + prepareLoadout + /code-mode command
+├── index.ts              ← extension adapter: registerTool + registerCommand + forwarding
 ├── repl-worker.ts        ← child process: persistent vm context, TLA rewrite, tool bridge
 ├── protocol.ts           ← shared message types
-├── output.ts             ← truncation/spill helpers
+├── gating.ts             ← mode owner: settings boundary (flat-key warning), override, loadout builders, /code-mode decision
+├── format.ts             ← result formatting: output budget (honest truncation marker), result sections, stateLost note
 └── DESIGN.md             ← this document
 ```
 

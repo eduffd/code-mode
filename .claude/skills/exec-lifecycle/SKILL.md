@@ -47,7 +47,7 @@ If you change the lifecycle, run this check and only move the **Sync commit** li
 - `worker-host.ts`: effect interpretation — spawn (permission flags with per-boot plain retry, boot timeout, stderr capture, pidfile), kill, send, exec timers, tool answering.
 - `index.ts`: the adapter — `runScript()` (the resolve-only waiter map), `dispatch()`, `execute()` (`details.{ok,stateLost}`), the `/code-mode` command handler, and the `session_before_switch` handler registration.
 - `repl-worker.js` only through its IPC protocol (ready/exec/end/toolCall), mirrored by `fake-worker.mjs`; with `--real`, also as a real process.
-- Not covered: `compileScript`/compile logic, output truncation (`output.ts`), tool gating modes (`on`/`only`), multiple concurrent execs beyond the P2 follow-up (the core models queued execs; this checker drives one at a time), and timings beyond the stated bound.
+- Not covered: `compileScript`/compile logic, output truncation (`format.ts`), tool gating modes (`on`/`only`), multiple concurrent execs beyond the P2 follow-up (the core models queued execs; this checker drives one at a time), and timings beyond the stated bound.
 
 **Bound:** event sequences over `{end, crash, off, tick}` up to length 3 from "exec accepted, worker booted, script running" — 85 scenarios, each ending in a settlement deadline of 300 ms and a follow-up-call probe. Exhaustive within the bound; not beyond it.
 
