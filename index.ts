@@ -5,244 +5,74 @@
 //   Session tools are callable as `tools.<name>(args)`; output is distilled.
 // - `/code-mode` command: on | off | only | status — "only" hides direct tool
 //   declarations from the model (they stay callable from scripts), steering
-//   work through the REPL. Mirrors the built-in codemode "only" mode but is
-//   session-scoped instead of a global setting.
+//   work through the REPL.
 //
-// See DESIGN.md.
+// The exec lifecycle lives in lifecycle.ts as a pure step(state, event) core;
+// worker-host.ts interprets its effects. This file is the adapter: register
+// the tool/command/session hooks, forward events, map settled outcomes to the
+// public result shape. Exec futures are resolve-only — the core settles every
+// accepted exec exactly once, so there is no reject path here. See DESIGN.md.
 
-import { fork, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { truncateOutput } from "./output";
-import {
-	DISCOVERY_GLOBALS,
-	DISCOVERY_LISTING,
-	isWorkerOutMessage,
-	type ExecOutcome,
-	type ToolDecl,
-} from "./protocol";
-
-// ---------------------------------------------------------------- exec plumbing
-
-interface ExecWaiter {
-	resolve: (outcome: Omit<ExecOutcome, "stateLost">) => void;
-	reject: (reason: Error) => void;
-	timer: NodeJS.Timeout;
-}
+import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol";
+import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle";
+import { createWorkerHost } from "./worker-host";
 
 // ---------------------------------------------------------------- constants
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const CODE_MODE_TOOL = "code_mode";
 
-const workerPath = fileURLToPath(new URL("./repl-worker.js", import.meta.url));
-const packageDir = path.dirname(workerPath);
-
 // ---------------------------------------------------------------- helpers
 
 const toIdentifier = (name: string): string => name.replace(/[^A-Za-z0-9_$]/g, "_");
-
-interface ContentItem {
-	type?: unknown;
-	text?: unknown;
-}
-
-/** Join the text items of a tool result's content array; "" when none. */
-const contentText = (content: unknown): string =>
-	Array.isArray(content)
-		? (content as ContentItem[])
-				.map((item) => (item?.type === "text" && typeof item.text === "string" ? item.text : ""))
-				.filter((s) => s.length > 0)
-				.join("\n")
-		: "";
 
 // ---------------------------------------------------------------- extension
 
 export default function codeModeExtension(pi: ExtensionAPI) {
 	// Session-scoped mode override; null = follow settings (codemode.mode, default "on").
 	let modeOverride: "on" | "off" | "only" | null = null;
-	let permissionFlagsSupported = true;
 
-	let worker: ChildProcess | null = null;
-	let workerReady = false;
-	let execSeq = 0;
-	const pendingExecs = new Map<number, ExecWaiter>();
-	/** The execute() context, valid while one script runs; nested tool calls need it. */
-	let activeToolCtx: ExtensionToolContext | undefined;
-	let execQueue: Promise<void> = Promise.resolve();
-
-	const resolveMode = (): "on" | "off" | "only" => {
+	function resolveMode(): "on" | "off" | "only" {
 		if (modeOverride !== null) return modeOverride;
-		const setting = pi.getSettings().codemode?.mode;
+		// Settings are external data: the declared schema lacks "off", but user
+		// JSON can carry any mode string, so read the value as unknown.
+		const setting: unknown = pi.getSettings().codemode?.mode;
 		return setting === "only" ? "only" : setting === "off" ? "off" : "on";
-	};
-
-	// ---- worker lifecycle
-
-	function killWorker(): void {
-		const proc = worker;
-		worker = null;
-		workerReady = false;
-		if (proc) {
-			proc.removeAllListeners();
-			proc.kill();
-		}
-		for (const [, waiter] of pendingExecs) {
-			clearTimeout(waiter.timer);
-			waiter.reject(new Error("code_mode worker stopped; REPL state was lost"));
-		}
-		pendingExecs.clear();
 	}
 
-	function spawnWorker(): Promise<void> {
-		return new Promise((resolve, reject) => {
-			// Best-effort hardening: the worker gets no fs/cli access except this
-			// package dir (worker source + acorn dependency live there).
-			const flags = permissionFlagsSupported ? ["--permission", `--allow-fs-read=${packageDir}`] : [];
-			const proc = fork(workerPath, [], {
-				cwd: packageDir,
-				execArgv: flags,
-				stdio: ["ignore", "ignore", "pipe", "ipc"],
-			});
-			const stderr: string[] = [];
-			proc.stderr?.on("data", (chunk: Buffer) => {
-				if (stderr.length < 20) stderr.push(chunk.toString());
-			});
-			const fail = (message: string) => {
-				clearTimeout(bootTimer);
-				proc.removeAllListeners();
-				proc.kill();
-				reject(new Error(`${message}${stderr.length > 0 ? `: ${stderr.join("")}` : ""}`));
-			};
-			const bootTimer = setTimeout(() => fail("code_mode worker did not start"), 5_000);
-			proc.once("message", (msg: unknown) => {
-				if (isWorkerOutMessage(msg) && msg.type === "ready") {
-					clearTimeout(bootTimer);
-					worker = proc;
-					workerReady = true;
-					proc.on("message", onWorkerMessage);
-					proc.once("exit", () => {
-						if (worker === proc) killWorker();
-					});
-					resolve();
-				}
-			});
-			proc.once("error", (err: Error) => fail(`code_mode worker failed to spawn: ${err.message}`));
-			proc.once("exit", () => fail("code_mode worker exited during boot"));
-		});
+	let state: LifecycleState = { kind: "idle" };
+	let execSeq = 0;
+	const waiters = new Map<number, (outcome: ExecOutcome) => void>();
+
+	const host = createWorkerHost({ onEvent: dispatch });
+
+	function dispatch(event: LifecycleEvent): void {
+		const next = step(state, event);
+		state = next.state;
+		for (const settled of next.settled) {
+			const resolve = waiters.get(settled.id);
+			waiters.delete(settled.id);
+			resolve?.(settled.outcome);
+		}
+		for (const effect of next.effects) host.interpret(effect);
 	}
 
-	async function ensureWorker(): Promise<void> {
-		if (worker !== null && workerReady) return;
-		killWorker();
-		try {
-			await spawnWorker();
-		} catch (err) {
-			if (!permissionFlagsSupported) throw err;
-			// Permission flags may be unsupported or broken on this Node build — retry plain.
-			permissionFlagsSupported = false;
-			await spawnWorker();
-		}
-	}
-
-	function onWorkerMessage(msg: unknown): void {
-		if (!isWorkerOutMessage(msg)) return;
-		if (msg.type === "toolCall") {
-			void answerToolCall(msg.callId, msg.name, msg.args);
-			return;
-		}
-		if (msg.type === "end") {
-			const waiter = pendingExecs.get(msg.id);
-			if (!waiter) return;
-			pendingExecs.delete(msg.id);
-			clearTimeout(waiter.timer);
-			waiter.resolve({ ok: msg.ok, value: msg.value, error: msg.error, output: msg.output });
-		}
-	}
-
-	async function answerToolCall(callId: number, name: string, args: unknown): Promise<void> {
-		const proc = worker;
-		if (!proc) return;
-		let payload: { ok: true; value: unknown } | { ok: false; error: string };
-		try {
-			if (!activeToolCtx) throw new Error("no active code_mode context");
-			const outcome = await activeToolCtx.executeTool(name, args);
-			const result = outcome.result;
-			if (outcome.isError) {
-				payload = { ok: false, error: contentText(result?.content) || "tool call failed" };
-			} else if (result?.structuredContent !== undefined) {
-				payload = { ok: true, value: result.structuredContent };
-			} else {
-				payload = { ok: true, value: contentText(result?.content) };
-			}
-		} catch (err) {
-			payload = { ok: false, error: err instanceof Error ? err.message : String(err) };
-		}
-		if (worker === proc) proc.send({ type: "toolResult", callId, ...payload });
-	}
-
-	// ---- script execution
-
-	function toolDeclarations(): ToolDecl[] {
-		return (activeToolCtx?.tools ?? [])
+	function toolDeclarations(ctx: ExtensionToolContext): ToolDecl[] {
+		return ctx.tools
 			.filter((t) => t.name !== CODE_MODE_TOOL)
 			.map((t) => ({ name: t.name, description: t.description ?? "" }));
 	}
 
-	async function runScript(code: string, timeoutMs: number): Promise<ExecOutcome> {
-		const run = execQueue.then(async (): Promise<Omit<ExecOutcome, "stateLost">> => {
-			try {
-				await ensureWorker();
-			} catch (err) {
-				return {
-					ok: false,
-					error: { name: "SandboxError", message: err instanceof Error ? err.message : String(err) },
-					output: [],
-				};
-			}
-			const proc = worker;
-			if (!proc) {
-				return {
-					ok: false,
-					error: { name: "SandboxError", message: "code_mode worker unavailable" },
-					output: [],
-				};
-			}
-			const id = ++execSeq;
-			return new Promise((resolve, reject) => {
-				const timer = setTimeout(() => {
-					pendingExecs.delete(id);
-					// Hard timeout: kill the worker; a spinning script cannot be interrupted otherwise.
-					killWorker();
-					resolve({
-						ok: false,
-						error: {
-							name: "TimeoutError",
-							message: `script exceeded ${timeoutMs} ms and the worker was killed; REPL state was lost — re-set any variables you still need`,
-						},
-						output: [],
-					});
-				}, timeoutMs);
-				pendingExecs.set(id, { resolve, reject, timer });
-				proc.send({ type: "exec", id, code, tools: toolDeclarations() });
-			});
+	/** The only place a caller future is created: resolve-only, the core settles it. */
+	function runScript(code: string, timeoutMs: number, ctx: ExtensionToolContext): Promise<ExecOutcome> {
+		const exec: AcceptedExec = { id: ++execSeq, code, tools: toolDeclarations(ctx), timeoutMs };
+		return new Promise<ExecOutcome>((resolve) => {
+			waiters.set(exec.id, resolve);
+			dispatch({ type: "execRequested", exec });
 		});
-		execQueue = run.then(
-			() => undefined,
-			() => undefined,
-		);
-		try {
-			return { ...(await run), stateLost: worker === null };
-		} catch (err) {
-			return {
-				ok: false,
-				error: { name: "WorkerError", message: err instanceof Error ? err.message : String(err) },
-				output: [],
-				stateLost: true,
-			};
-		}
 	}
 
 	// ---- result formatting
@@ -257,14 +87,12 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			const e = outcome.error;
 			sections.push(`Error: ${e ? `${e.name}: ${e.message}` : "script failed"}`);
 			if (e?.stack) sections.push(e.stack);
+			if (outcome.journal && outcome.journal.length > 0) {
+				const landed = outcome.journal.map((c) => `${c.name} ${c.ok ? "ok" : "error"}`).join(", ");
+				sections.push(`(completed before interruption: ${landed})`);
+			}
 		}
-		if (outcome.stateLost) {
-			sections.push(
-				outcome.ok
-					? "(note: the REPL worker restarted before this call; state from earlier calls is gone)"
-					: "(REPL state was lost)",
-			);
-		}
+		if (outcome.stateLost) sections.push("(REPL state was lost)");
 		return sections.join("\n") || "(no output; script returned undefined)";
 	}
 
@@ -296,12 +124,13 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			return DISCOVERY_GLOBALS.test(code) ? ("all" as const) : (code.match(/\w+/g) ?? []);
 		},
 		execute: async (_toolCallId, params: { code: string; timeout_ms?: number }, _signal, _onUpdate, ctx) => {
-			activeToolCtx = ctx;
+			host.setToolContext(ctx);
 			const outcome = await runScript(
 				params.code,
 				typeof params.timeout_ms === "number" && params.timeout_ms > 0 ? params.timeout_ms : DEFAULT_TIMEOUT_MS,
+				ctx,
 			);
-			activeToolCtx = undefined;
+			host.setToolContext(undefined);
 			return {
 				content: [{ type: "text" as const, text: formatResult(outcome) }],
 				details: { ok: outcome.ok, stateLost: outcome.stateLost },
@@ -358,19 +187,19 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
 			if (arg === "" || arg === "status") {
-				const setting = pi.getSettings().codemode?.mode;
+				const setting: unknown = pi.getSettings().codemode?.mode;
 				const source =
 					modeOverride !== null
 						? "session override"
 						: setting === undefined
 							? "settings default"
-							: `settings: ${setting}`;
+							: `settings: ${String(setting)}`;
 				ctx.ui.notify(`code_mode mode: ${resolveMode()} (${source})`);
 				return;
 			}
 			if (arg === "on" || arg === "off" || arg === "only") {
 				modeOverride = arg;
-				if (arg === "off") killWorker();
+				if (arg === "off") dispatch({ type: "stopRequested" });
 				ctx.ui.notify(`code_mode mode: ${arg}`);
 				return;
 			}
@@ -379,7 +208,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 	});
 
 	// REPL state is per-process and per-session: reset on switches and shutdown.
-	pi.on("session_before_switch", () => killWorker());
-	pi.on("session_before_fork", () => killWorker());
-	pi.on("session_shutdown", () => killWorker());
+	pi.on("session_before_switch", () => dispatch({ type: "stopRequested" }));
+	pi.on("session_before_fork", () => dispatch({ type: "stopRequested" }));
+	pi.on("session_shutdown", () => dispatch({ type: "stopRequested" }));
 }

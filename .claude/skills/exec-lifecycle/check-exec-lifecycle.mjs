@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // check-exec-lifecycle.mjs — bounded exhaustive interleaving check for the
-// code_mode exec lifecycle in index.ts (runScript / killWorker / execQueue).
+// code_mode exec lifecycle: the pure step(state, event) core in lifecycle.ts,
+// driven through the real index.ts adapter and a real forked worker process.
+// The checker only touches the public surface (tool execute, /code-mode
+// command, session events), so it exercises core + effect interpreter +
+// adapter together.
 //
 // Properties (spec = a code_mode call always returns to the model):
 //   P1 settle       — the first exec settles within DEADLINE_MS in every interleaving

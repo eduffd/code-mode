@@ -3,6 +3,8 @@
 // end) but emulates a long-running script (never completes on its own) and
 // takes its event script from __cm_* control messages sent over IPC:
 //   { type: "__cm_deliverEnd" } — reply with a successful end for the last exec
+//   { type: "__cm_deliverEndId", id } — reply with a successful end claiming the
+//     given exec id (proves a late/unknown end is dropped by the core)
 //   { type: "__cm_crash" }      — die immediately (real exit event, code 137)
 // Every exec is acknowledged with { type: "__cm_execReceived" } so the harness
 // knows the exec is in flight (the extension ignores unknown message types).
@@ -27,6 +29,9 @@ process.on("message", (msg) => {
 			break;
 		case "__cm_deliverEnd":
 			sendProtocol({ type: "end", id: lastExecId, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
+			break;
+		case "__cm_deliverEndId":
+			sendProtocol({ type: "end", id: msg.id, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
 			break;
 		case "exec":
 			lastExecId = msg.id;
