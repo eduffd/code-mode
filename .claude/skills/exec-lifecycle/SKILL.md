@@ -37,7 +37,7 @@ Add `--real` to also SIGKILL a real `repl-worker.js` mid-exec and prove on a rea
 
 If you change the lifecycle, run this check and only move the **Sync commit** line forward after you have read the diff and confirmed this skill still describes the code at the new commit (function names, protocol, event sources, bound).
 
-**Sync commit: 6203d90** (`fix(codemode): settle exec queue when worker stops`) — last confirmed that index.ts at this commit is what the check models. The program root reconciles this line to the PR's merge SHA when PR1 closes.
+**Sync commit: fdb25ce0262b3b8dee56c17b3df36c487ed796b7** (PR1 squash merge of `fix(codemode): settle exec queue when worker stops`) — last confirmed that index.ts at this commit is what the check models.
 
 ## Covered code
 
