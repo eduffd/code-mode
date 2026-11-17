@@ -1,2 +1,3 @@
 node_modules/
 .code-mode-worker.pid
+.claude/skills/verify/evidence/
