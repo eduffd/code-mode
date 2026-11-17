@@ -54,7 +54,6 @@ proc.on("message", (msg) => {
 });
 proc.stderr?.on("data", (c) => process.stderr.write(c));
 
-// Hard cap so a stuck step cannot wedge the run; driver-level, not the REPL timeout.
 const overallTimer = setTimeout(() => {
   console.error(JSON.stringify({ fatal: "driver timeout", recorded, childPid }));
   proc.kill();

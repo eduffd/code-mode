@@ -12,14 +12,10 @@
 // enums, no namespaces) — type stripping must be able to load it from plain
 // JavaScript.
 
-/** One captured output item of a finished script. The worker's `image()`
- * helper also emits `{type:"image", data, mimeType}` items, which this type
- * does not model — the host formats only text items today. */
-export interface OutputItem {
-	type: "text";
-	text: string;
-	console?: true;
-}
+/** One captured output item of a finished script. */
+export type OutputItem =
+	| { type: "text"; text: string; console?: true }
+	| { type: "image"; data: string; mimeType: string };
 
 /** A session tool as declared to the worker; callable as `tools.<name>(args)`. */
 export interface ToolDecl {

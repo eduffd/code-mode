@@ -19,7 +19,7 @@ const TAIL_CHARS = 5_000;
  * honest elision marker. Returns the display text.
  */
 export function truncateOutput(items: OutputItem[]): string {
-	const parts = items.map((item) => item.text);
+	const parts = items.filter((item) => item.type === "text").map((item) => item.text);
 	const full = parts.join("\n");
 	if (full.length <= MAX_TOTAL_CHARS) return full;
 

@@ -11,7 +11,7 @@ A script that never finishes is killed hard: the worker dies, the call reports `
 ## How to get to it (user POV)
 
 - Real session: the model sends a script with an accidental infinite loop and `timeout_ms: 1000`; the tool result text shows the TimeoutError and the state-lost note; the model's next script re-declares what it needs and succeeds.
-- Harness: the worker driver reproduces this deterministically by passing `timeout_ms` in the code? No — the timeout lives in the HOST (`index.ts` `runScript`), not the worker. See Gotchas: drive the timeout through the real-session harness or a direct `index.ts` load; the worker driver alone cannot kill its own worker mid-script.
+- Harness: the timeout lives in the HOST (`index.ts` `runScript`), not the worker, so the worker driver alone cannot kill its own worker mid-script. Drive the timeout through the real-session harness or a direct `index.ts` load; see Gotchas.
 
 ## Driving it
 

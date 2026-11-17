@@ -14,15 +14,15 @@ code-mode is a Pi extension, not a server. A user touches it two ways: the `code
 3. **Real Pi session** (end to end, costs one small model run): the extension is installed in pi (visible in `pi list` as `../../code/code-mode`). A `pi -p` run with a pointed prompt makes the model actually call `code_mode` — this is the only harness that exercises registration, `ctx.executeTool` permission hooks, and result formatting in one shot. Run it with `--no-session` (or `--session-dir` under the evidence dir) and `--no-extensions -e` pointed at this checkout so the user's installed extension state cannot interfere:
 
    ```sh
-   pi -p --no-extensions --approve -e "$REPO/index.ts" \
+   pi -p --no-session --no-extensions --approve -e "$REPO/index.ts" \
      "Use the code_mode tool: run 'const q = await tools.bash({command: 'echo proof-42'}); q.trim()' and report the final value exactly."
+   ```
 
    `--approve` matters in print mode: without project trust, pi skips project
    settings (`<cwd>/.pi/settings.json`), so a settings-sourced mode
    (`codemode.mode`) silently does not apply. `--approve` grants trust for
    this one run from a scratch cwd. `-na` is not a valid flag pair here: it
    parses as `-n a` (session name), not `--approve`.
-   ```
 
    Non-determinism is inherent (the model chooses the tool); if it answers without calling the tool, retry once with a more pointed prompt, then record the failure as a finding, not a pass.
 

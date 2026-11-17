@@ -16,7 +16,6 @@ const check = (name, pass, detail = "") => checks.push({ name, pass: !!pass, det
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 check("node >= 23.6 (type stripping)", nodeMajor >= 23, process.versions.node);
 
-// Worker boot handshake, mirroring what index.ts does (5s boot timer).
 const boot = await new Promise((resolve) => {
   const proc = fork(path.join(packageRoot, "repl-worker.js"), [], {
     cwd: packageRoot,

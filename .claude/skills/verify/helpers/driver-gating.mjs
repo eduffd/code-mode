@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // driver-gating.mjs — drives the extension's tool gating (/code-mode modes)
-// by loading index.ts against a stubbed ExtensionAPI. The extension API is the
-// production boundary: index.ts only speaks through it, so a stub pi object
-// exercises the real registerTool/prepareLoadout/registerCommand code.
+// by loading index.ts against a stubbed ExtensionAPI — the production boundary
+// index.ts only speaks through — so the stub exercises the real registration
+// and loadout code.
 //
 // Usage: node driver-gating.mjs [out.json]   (run with cwd = the package root)
 // Writes JSON results and exits non-zero if any assertion fails.
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { writeFileSync } from "node:fs";
 
-// index.ts imports "./output" extensionless; type-stripping needs the hook.
+// index.ts imports "./gating" extensionless; type-stripping needs the hook.
 registerHooks({
   resolve(specifier, context, next) {
     try {
@@ -61,7 +61,6 @@ function fail(msg) {
   process.exit(2);
 }
 
-// Default mode (settings default "on"): tools stay declared, descriptions annotated.
 let load = tool.prepareLoadout(loadout());
 check("on: no hidden declarations", load && !load.hiddenDeclarations, load?.hiddenDeclarations);
 check(
@@ -71,22 +70,18 @@ check(
 );
 check("on: code_mode itself not annotated", load?.descriptions?.code_mode === undefined, load?.descriptions);
 
-// /code-mode only: hide direct declarations, list callable tools in the description.
 await command.handler("only", uiCtx);
 load = tool.prepareLoadout(loadout());
 check("only: read+bash hidden", JSON.stringify(load?.hiddenDeclarations) === JSON.stringify(["read", "bash"]), load?.hiddenDeclarations);
 check("only: description lists tools.bash", load?.descriptions?.code_mode?.includes("tools.bash(args)"), load?.descriptions?.code_mode);
 check("only: description lists tools.read", load?.descriptions?.code_mode?.includes("tools.read(args)"), load?.descriptions?.code_mode);
 
-// /code-mode status reports the session override.
 await command.handler("status", uiCtx);
 check("status: reports session override", notifications.at(-1)?.m === "code_mode mode: only (session override)", notifications.at(-1));
 
-// /code-mode off: tool unregisters (prepareLoadout returns undefined).
 await command.handler("off", uiCtx);
 check("off: prepareLoadout returns undefined", tool.prepareLoadout(loadout()) === undefined, tool.prepareLoadout(loadout()));
 
-// Unknown mode is rejected.
 await command.handler("bogus", uiCtx);
 check("bogus: error notification", notifications.at(-1)?.m.includes('Unknown mode "bogus"'), notifications.at(-1));
 

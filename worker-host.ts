@@ -62,9 +62,8 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 	let toolContext: ToolContextLike | undefined;
 
 	// ---- pidfile: a best-effort breadcrumb (parent + child pid) for cleanup
-	// scoped to recorded pids instead of process names. Read today by the
-	// verify lane drivers; scripts/worker-cleanup.mjs is the official
-	// consumer. Last boot wins.
+	// scoped to recorded pids instead of process names.
+	// scripts/worker-cleanup.mjs is the official consumer. Last boot wins.
 
 	const writePidFile = (proc: ChildProcess): void => {
 		try {
