@@ -10,7 +10,8 @@
 // knows the exec is in flight (the extension ignores unknown message types).
 // CM_FAKE_BOOT_CRASH=1 models a broken first boot with permission flags:
 // the flagged spawn dies (execArgv carries --permission); the plain retry
-// spawned without flags boots normally. No fs access needed.
+// spawned without flags boots normally. No runtime fs access: the only file
+// read is the protocol.ts import at module load.
 
 import { isWorkerOutMessage } from "../../../protocol.ts";
 

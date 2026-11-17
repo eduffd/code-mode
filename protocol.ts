@@ -13,11 +13,9 @@
 // JavaScript.
 
 /** One captured output item of a finished script. */
-export interface OutputItem {
-	type: "text";
-	text: string;
-	console?: true;
-}
+export type OutputItem =
+	| { type: "text"; text: string; console?: true }
+	| { type: "image"; data: string; mimeType: string };
 
 /** A session tool as declared to the worker; callable as `tools.<name>(args)`. */
 export interface ToolDecl {
