@@ -17,10 +17,11 @@ Requires Node ≥ 23.6 (type stripping for the worker; permission-model flags us
 
 ## Files
 
-- `index.ts` — extension: tool registration, `prepareLoadout` gating, `/code-mode` command
+- `index.ts` — extension adapter: registers the `code_mode` tool, the `/code-mode` command, and the session hooks; mode lives in gating.ts, formatting in format.ts
 - `compile.ts` — the one compile path: acorn parse, async-IIFE rewrite, `globalThis` capture, redeclare detection
 - `repl-worker.js` — forked worker: persistent vm context, validating tool bridge over fork IPC, disconnect self-exit
-- `output.ts` — output budget (head/tail truncation)
+- `gating.ts` — mode owner: settings parse with a flat-key warning, session override, loadout builders, the pure `/code-mode` decision
+- `format.ts` — result formatting: output budget (head-and-tail truncation with the true omitted-byte count), value/error sections, the stateLost note
 - `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 30 checks)
 - `test-compile.mjs` — compile drift tests against compile.ts without forking a worker (`node test-compile.mjs`, 32 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 56 checks)
