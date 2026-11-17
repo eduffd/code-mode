@@ -10,14 +10,14 @@ Scripts call session tools as `await tools.<name>(args)`; the worker forwards th
 
 ## How to get to it (user POV)
 
-- Real session: the model writes a script containing `await tools.bash({cmd: ...})`; the tool result text shows what the script returned. The user sees real side effects (files created, commands run) — the proof must observe those side effects, not just the script's return value.
+- Real session: the model writes a script containing `await tools.bash({command: ...})`; the tool result text shows what the script returned. The user sees real side effects (files created, commands run) — the proof must observe those side effects, not just the script's return value.
 - Harness: the driver answers every `toolCall` from the plan's `toolValues`; no real side effects occur at this level, so side-effect proofs belong to the real-session harness.
 
 ## Driving it with the worker driver (helpers/driver-worker.mjs)
 
 Preconditions: doctor green; plan includes a `tools` array so discovery has something to list, e.g. `["bash","read","mcp__docs__search"]` mapped to `{name, description}` objects (see `test-worker.mjs` for the exact shape).
 
-- Tool call resolves: `{"name":"toolcall","code":"const out = await tools.bash({ cmd: 'ls' }); out","toolValues":{"bash":"file1\nfile2\nfile3"}}` — expect `value` "file1\nfile2\nfile3".
+- Tool call resolves: `{"name":"toolcall","code":"const out = await tools.bash({ command: 'ls' }); out","toolValues":{"bash":"file1\nfile2\nfile3"}}` — expect `value` "file1\nfile2\nfile3".
 - Odd raw name: `{"name":"raw-name","code":"(await tools['mcp__docs__search']({ q: 'x' })) ?? 'called'","toolValues":{"mcp__docs__search":{"hits":3}}}` — expect `value` the JSON of `{"hits":3}` (values are JSON-stringified over IPC).
 - Discovery globals: `{"name":"discovery","code":"ALL_TOOLS.join(',') + '|' + searchTools('docs').length"}` — expect `"bash,read,mcp__docs__search|1"` with the tools above.
 

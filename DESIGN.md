@@ -28,7 +28,7 @@ Each module owns one concern; the boundaries are load-bearing, not decorative:
 
 - Host → worker: `{type:"exec", id, code, tools}` starts one script; `{type:"toolResult", callId, ok, value?, error?}` answers one nested tool call; `{type:"ping"}` is the liveness probe.
 - Worker → host: `{type:"ready"}` after boot; `{type:"toolCall", callId, name, args}` requests a session tool; `{type:"end", id, ok, value?, error?, output}` settles the exec with the distilled output.
-- Output items are `{type:"text", text, console?}`; the worker's `image()` helper emits an additional `{type:"image", data, mimeType}` variant the type does not model, and only text items are formatted today.
+- Output items are `{type:"text", text, console?}` or `{type:"image", data, mimeType}` (the worker's `image()` helper emits the image variant); the protocol type models both, and format.ts filters for text items when rendering.
 - Tool names that are not identifiers map through `toIdentifier` (`mcp__docs__search` style), so the name a script calls is the name the bridge resolves.
 
 ## 4. The lifecycle property
