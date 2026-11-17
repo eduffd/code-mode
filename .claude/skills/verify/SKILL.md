@@ -15,7 +15,7 @@ code-mode is a Pi extension, not a server. A user touches it two ways: the `code
 
    ```sh
    pi -p --no-session --no-extensions --approve -e "$REPO/index.ts" \
-     "Use the code_mode tool: run 'const q = await tools.bash({command: 'echo proof-42'}); q.trim()' and report the final value exactly."
+     "Use the code_mode tool: run 'const q = await tools.bash({command: 'echo proof-42'}); q.output.trim()' and report the final value exactly."
    ```
 
    `--approve` matters in print mode: without project trust, pi skips project
