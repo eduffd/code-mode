@@ -104,7 +104,7 @@ check(
 await run("let counter = 10;");
 check("drift: setup persisted counter", sandbox.counter === 10, JSON.stringify(sandbox.counter));
 
-const redeclare = (code, name) => {
+const redeclare = (code) => {
 	try {
 		compileScript(code, { persistedNames: persisted });
 		return null;
@@ -113,7 +113,7 @@ const redeclare = (code, name) => {
 	}
 };
 
-let e = redeclare("let counter = 99;", "counter");
+let e = redeclare("let counter = 99;");
 check("drift: redeclaring a persisted let throws", e instanceof SyntaxError, JSON.stringify(e?.message));
 check(
 	"drift: taught reassign message",
@@ -121,13 +121,13 @@ check(
 	e?.message,
 );
 
-e = redeclare("const counter = 1;", "counter");
+e = redeclare("const counter = 1;");
 check("drift: redeclaring a persisted const throws", e instanceof SyntaxError, JSON.stringify(e?.message));
-e = redeclare("var counter = 1;", "counter");
+e = redeclare("var counter = 1;");
 check("drift: redeclaring a persisted var throws", e !== null, JSON.stringify(e?.message));
-e = redeclare("function counter() {}", "counter");
+e = redeclare("function counter() {}");
 check("drift: redeclaring a persisted function throws", e !== null, JSON.stringify(e?.message));
-e = redeclare("class counter {}", "counter");
+e = redeclare("class counter {}");
 check("drift: redeclaring a persisted class throws", e !== null, JSON.stringify(e?.message));
 
 // The throw happens at compile time: nothing runs, nothing is captured.

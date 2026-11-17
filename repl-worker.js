@@ -57,12 +57,10 @@ function exit(value) {
 // Per-exec tool registry: the raw ToolDecl list, plus the identifier form
 // (`web.search` -> `web_search`) derived from it. Both forms resolve; on a
 // collision the raw name wins.
-let toolDecls = [];
 const toolByRaw = new Map();
 const rawByIdentifier = new Map();
 
 const installTools = (decls) => {
-	toolDecls = decls;
 	toolByRaw.clear();
 	rawByIdentifier.clear();
 	for (const t of decls) {
