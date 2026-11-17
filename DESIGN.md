@@ -55,18 +55,19 @@ Sandboxing of the worker process: `node --permission --allow-fs-read=<ext-dir>` 
 - Redeclaring (`const x` again) throws SyntaxError — correct REPL semantics; the model reassigns (`x = 9`).
 - **Top-level `await` does not compile in a `vm.Script`** — and the model will write `const r = await tools.read(...)` constantly.
 
-**Hybrid execution — two paths per script:**
+**One compile path (compile.ts):**
 
-1. **No TLA** → `vm.runInContext(code, ctx)` directly. Native persistence, native errors.
-2. **With TLA** → parse with **acorn** (`sourceType: "module"`, so TLA parses); rewrite top-level declarations to `globalThis` assignments; run `(async () => { … })()` inside the context.
-   - `const x = E` / `let x = E` / `var x = E` → `globalThis.x = E` (bare `x` references resolve via scope-chain fallback to `globalThis.x`, both within this script and in later scripts).
-   - `function f() {}` → `globalThis.f = f; function f() {}` — preserves intra-script hoisting.
-   - `class C {}` → `globalThis.C = C` in place (classes have TDZ anyway).
-   - Destructured declarators (`const { a, b } = …`, `const [a] = …`) → per-binding assignments via a small binding-name extractor.
-   - Nested/block-scoped declarations (`for (const…)`, inside blocks/functions) are **not** rewritten — only direct children of Program.
-   - The worker keeps `knownNames` (from rewrites) so `/code-mode` and tool output can report REPL state size/names.
+Every script takes the same path, with or without top-level `await`: compile.ts parses it once with acorn (`allowAwaitOutsideFunction`, `allowReturnOutsideFunction`) and rewrites it into `(async () => { … })()` with `globalThis` capture.
 
-The TLA path is the **main path** (model scripts will almost always await). If acorn fails to parse, report the SyntaxError to the model unchanged.
+- `const x = E` / `let x = E` / `var x = E`: the declaration stays, then `globalThis.x = x;` follows it. Bare `x` references resolve to `globalThis.x`, in this script and in later ones.
+- `function f() {}` → `globalThis.f = f;` after the declaration, preserving intra-script hoisting; `class C {}` captured in place.
+- Destructured declarators (`const { a, b } = …`, `const [a] = …`) → per-binding capture via a small binding-name extractor.
+- Nested/block-scoped declarations (`for (const…)`, inside blocks/functions) are **not** rewritten — only direct children of Program.
+- The last top-level expression statement becomes an explicit `return`, so completion values behave like a REPL.
+- The worker keeps the captured names (`persisted`); redeclaring one in a later exec throws the taught `SyntaxError` ("… has already been declared — reassign without const instead") before the script runs. Plain assignment reassigns.
+- An acorn `SyntaxError` for invalid code reaches the model unchanged.
+
+The worker JIT-warms this path at boot (2000 unique-source parses plus 25 full runs, ~50 ms, bounded by constants) so the first exec costs what the thousandth costs. The warmup calls `compileScript`, so it adds no second path.
 
 Result capture: the worker awaits the script's promise; resolved value (or `undefined`) + thrown errors go back over IPC.
 
