@@ -7,37 +7,35 @@
 //   declarations from the model (they stay callable from scripts), steering
 //   work through the REPL.
 //
-// The exec lifecycle lives in lifecycle.ts as a pure step(state, event) core;
-// worker-host.ts interprets its effects. This file is the adapter: register
-// the tool/command/session hooks, forward events, map settled outcomes to the
-// public result shape. Exec futures are resolve-only — the core settles every
-// accepted exec exactly once, so there is no reject path here. See DESIGN.md.
+// This file is the adapter, and only that: register the tool, the command,
+// and the session hooks on pi, forward events, and map settled outcomes to
+// the public result shape. Mode ownership (resolution, the settings boundary
+// with its flat-key warning, loadout building, the /code-mode decision) lives
+// in gating.ts; result formatting lives in format.ts; the exec lifecycle
+// lives in lifecycle.ts (pure core) and worker-host.ts (effects). Exec
+// futures are resolve-only — the core settles every accepted exec exactly
+// once, so there is no reject path here. See DESIGN.md.
 
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { truncateOutput } from "./output";
-import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, toIdentifier, type ExecOutcome, type ToolDecl } from "./protocol";
+import { buildLoadout, createModeOwner, handleCommand, CODE_MODE_TOOL } from "./gating";
+import { formatResult } from "./format";
+import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol";
 import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle";
 import { createWorkerHost } from "./worker-host";
 
-// ---------------------------------------------------------------- constants
-
 const DEFAULT_TIMEOUT_MS = 120_000;
-const CODE_MODE_TOOL = "code_mode";
-
-// ---------------------------------------------------------------- extension
 
 export default function codeModeExtension(pi: ExtensionAPI) {
-	// Session-scoped mode override; null = follow settings (codemode.mode, default "on").
-	let modeOverride: "on" | "off" | "only" | null = null;
+	// The mode owner: session override first, else the settings boundary in gating.ts.
+	const mode = createModeOwner(() => pi.getSettings());
 
-	function resolveMode(): "on" | "off" | "only" {
-		if (modeOverride !== null) return modeOverride;
-		// Settings are external data: the declared schema lacks "off", but user
-		// JSON can carry any mode string, so read the value as unknown.
-		const setting: unknown = pi.getSettings().codemode?.mode;
-		return setting === "only" ? "only" : setting === "off" ? "off" : "on";
-	}
+	// A flat mode key would otherwise be a silent no-op: surface the warning
+	// once, loudly, when the session starts.
+	pi.on("session_start", (_event, ctx) => {
+		const warning = mode.resolve().warning;
+		if (warning) ctx.ui.notify(warning, "warning");
+	});
 
 	let state: LifecycleState = { kind: "idle" };
 	let execSeq = 0;
@@ -69,27 +67,6 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			waiters.set(exec.id, resolve);
 			dispatch({ type: "execRequested", exec });
 		});
-	}
-
-	// ---- result formatting
-
-	function formatResult(outcome: ExecOutcome): string {
-		const sections: string[] = [];
-		const text = truncateOutput(outcome.output);
-		if (text.length > 0) sections.push(text);
-		if (outcome.ok) {
-			if (outcome.value !== undefined) sections.push(`=> ${outcome.value}`);
-		} else {
-			const e = outcome.error;
-			sections.push(`Error: ${e ? `${e.name}: ${e.message}` : "script failed"}`);
-			if (e?.stack) sections.push(e.stack);
-			if (outcome.journal && outcome.journal.length > 0) {
-				const landed = outcome.journal.map((c) => `${c.name} ${c.ok ? "ok" : "error"}`).join(", ");
-				sections.push(`(completed before interruption: ${landed})`);
-			}
-		}
-		if (outcome.stateLost) sections.push("(REPL state was lost)");
-		return sections.join("\n") || "(no output; script returned undefined)";
 	}
 
 	// ---- tool definition
@@ -133,73 +110,20 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 				isError: !outcome.ok,
 			};
 		},
-		prepareLoadout: (loadout) => {
-			const mode = resolveMode();
-			if (mode === "off") return undefined;
-			const callable = loadout.callable.filter((t) => t.name !== CODE_MODE_TOOL);
-			const callableNames = new Set(callable.map((t) => t.name));
-
-			if (mode === "on") {
-				const descriptions: Record<string, string> = {};
-				for (const tool of loadout.declared) {
-					if (tool.name !== CODE_MODE_TOOL && callableNames.has(tool.name)) {
-						descriptions[tool.name] =
-							`${tool.description.trim()}\n\n` +
-							`Codemode: prefer running this via code_mode: \`tools.${toIdentifier(tool.name)}(args)\`.`;
-					}
-				}
-				return { descriptions };
-			}
-
-			// "only": hide direct declarations (they stay active and callable from scripts)
-			// and list every callable tool in the code_mode description.
-			const hiddenDeclarations = loadout.declared
-				.filter((t) => t.name !== CODE_MODE_TOOL && callableNames.has(t.name))
-				.map((t) => t.name);
-			const listing = callable
-				.map((t) => `- \`tools.${toIdentifier(t.name)}(args)\`: ${t.description.trim()}`)
-				.join("\n");
-			const description = [
-				"Run JavaScript as a persistent REPL. This session is in code mode: other tools are not declared",
-				"to you directly, but every session tool is callable from your script as `await tools.<name>(args)`.",
-				"Prefer doing all work here, in one or few scripts, instead of many one-off calls.",
-				"",
-				"Available tools:",
-				listing,
-				"",
-				"- Top-level declarations persist across calls (declare once; reassign without `const` afterwards).",
-				"- `text(s)`, `image(data, mimeType)`, `exit(value)`, captured `console.*`.",
-				`- ${DISCOVERY_LISTING} for discovery.`,
-				"- Only distilled output enters the conversation; return or `text()` what matters.",
-			].join("\n");
-			return { descriptions: { [CODE_MODE_TOOL]: description }, hiddenDeclarations };
-		},
+		prepareLoadout: (loadout) => buildLoadout(mode.resolve().mode, loadout),
 	});
 
-	// ---- /code-mode command
+	// ---- /code-mode command: gating.ts decides, this applies the side effects.
 
 	pi.registerCommand("code-mode", {
 		description: "code_mode session mode: on | off | only | status",
 		handler: async (args, ctx) => {
-			const arg = args.trim().toLowerCase();
-			if (arg === "" || arg === "status") {
-				const setting: unknown = pi.getSettings().codemode?.mode;
-				const source =
-					modeOverride !== null
-						? "session override"
-						: setting === undefined
-							? "settings default"
-							: `settings: ${String(setting)}`;
-				ctx.ui.notify(`code_mode mode: ${resolveMode()} (${source})`);
-				return;
+			const decision = handleCommand(args, mode.resolve());
+			if (decision.override !== undefined) {
+				mode.setOverride(decision.override);
+				if (decision.stopWorker) dispatch({ type: "stopRequested" });
 			}
-			if (arg === "on" || arg === "off" || arg === "only") {
-				modeOverride = arg;
-				if (arg === "off") dispatch({ type: "stopRequested" });
-				ctx.ui.notify(`code_mode mode: ${arg}`);
-				return;
-			}
-			ctx.ui.notify(`Unknown mode "${args.trim()}". Use: on | off | only | status`, "error");
+			ctx.ui.notify(decision.notify, decision.level);
 		},
 	});
 
