@@ -289,4 +289,17 @@ process.on("unhandledRejection", (e) => {
 // settles every pending exec when the worker dies.
 process.on("disconnect", () => process.exit(0));
 
+// JIT warmup: the first execs pay for V8 JIT-ing acorn and the vm run
+// machinery (~1.2 ms on exec 1, tens of µs for the next few hundred). Pre-run
+// the one compile path at boot so exec 1 costs what exec 1000 costs — the
+// 20-exec round-trip budget cannot absorb the ramp. Unique sources defeat
+// V8's compilation cache (that is the point: warm the parser, not the cache);
+// expression-only scripts capture nothing, so the sandbox stays clean.
+// ~2000 parses ≈ single-digit ms of boot, against a 5 s handshake.
+for (let i = 0; i < 2000; i += 1) compileScript(`${i} + 1`, { persistedNames: new Set() });
+for (let i = 0; i < 25; i += 1) {
+	const warm = compileScript(`${i} + 1`, { persistedNames: new Set() });
+	vm.runInContext(warm.source, ctx, { filename: "code_mode.js", breakOnSigint: true });
+}
+
 process.send({ type: "ready" });
