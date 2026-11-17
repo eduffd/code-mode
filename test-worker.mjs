@@ -27,21 +27,18 @@ proc.on("message", (msg) => {
 	}
 });
 
-function exec(code, toolValues = {}) {
+const DEFAULT_TOOLS = [
+	{ name: "bash", description: "Runs a bash command" },
+	{ name: "read", description: "Reads a file" },
+	{ name: "mcp__docs__search", description: "Search docs" },
+];
+
+function exec(code, toolValues = {}, tools = DEFAULT_TOOLS) {
 	return new Promise((resolve) => {
 		const id = ++seq;
 		execWaiters.set(id, resolve);
 		for (const [k, v] of Object.entries(toolValues)) toolAnswers.set(k, v);
-		proc.send({
-			type: "exec",
-			id,
-			code,
-			tools: [
-				{ name: "bash", description: "Runs a bash command" },
-				{ name: "read", description: "Reads a file" },
-				{ name: "mcp__docs__search", description: "Search docs" },
-			],
-		});
+		proc.send({ type: "exec", id, code, tools });
 	});
 }
 
@@ -148,6 +145,63 @@ check("return: declaration capture still runs before return", r.ok && r.value ==
 r = await exec("keep");
 check("return: captured var persists after return", r.ok && r.value === "pre", JSON.stringify(r.value));
 
+// 16. Tool bridge: unknown names are loud, with the closest real names.
+r = await exec("await tools.bsh({ cmd: 'x' })");
+check(
+	"bridge: unknown tool name error suggests the closest real tool",
+	!r.ok && /Unknown tool "bsh"/.test(r.error?.message ?? "") && /"bash"/.test(r.error?.message ?? "") && /searchTools\(\)/.test(r.error?.message ?? ""),
+	r.error?.message,
+);
+r = await exec("await tools.zzzqqq({})");
+check(
+	"bridge: unknown tool without a close match lists available tools",
+	!r.ok && /searchTools\(\)/.test(r.error?.message ?? "") && /Available: bash/.test(r.error?.message ?? ""),
+	r.error?.message,
+);
+
+// 17. Parameter-key warnings: additive output next to the tool result; the
+// call itself is never blocked.
+const SCHEMA_TOOLS = [
+	{
+		name: "sleep",
+		description: "Waits",
+		inputSchema: { type: "object", properties: { timeout: { type: "number" } }, required: ["timeout"] },
+	},
+];
+r = await exec("await tools.sleep({ timeout_secs: 5 })", { sleep: "slept" }, SCHEMA_TOOLS);
+check(
+	"bridge: wrong parameter key warns and names the real key",
+	r.ok &&
+		r.value === "slept" &&
+		r.output.some((i) => i.text.includes("timeout_secs") && i.text.includes('did you mean "timeout"')),
+	JSON.stringify(r.output),
+);
+r = await exec("await tools.sleep({ bogus: 1 })", { sleep: "slept-2" }, SCHEMA_TOOLS);
+check(
+	"bridge: unknown parameter without a close match still warns",
+	r.ok && r.value === "slept-2" && r.output.some((i) => i.text.includes('unknown parameter "bogus"') && i.text.includes("timeout")),
+	JSON.stringify(r.output),
+);
+r = await exec("await tools.bash({ weird_key: 1 })", { bash: "ok" });
+check(
+	"bridge: no param warning when the tool has no inputSchema",
+	r.ok && r.value === "ok" && !r.output.some((i) => i.text.startsWith("[codemode]")),
+	JSON.stringify(r.output),
+);
+
+// 18. Disconnect self-exit: closing the channel ends the worker (no orphan);
+// fallback kills the recorded pid only.
+const childPid = proc.pid;
+const exited = new Promise((resolve) => proc.once("exit", (code) => resolve({ code })));
+proc.disconnect();
+const exitOutcome = await Promise.race([exited, new Promise((r) => setTimeout(() => r(null), 3000))]);
+let selfExited = exitOutcome !== null;
+if (!selfExited) {
+	try {
+		process.kill(childPid, "SIGKILL");
+	} catch {}
+}
+check("worker: channel disconnect self-exits", selfExited, exitOutcome ? `exit code ${exitOutcome.code}` : "no exit within 3 s; killed recorded pid");
+
 console.log(`\n${results.filter((x) => x.pass).length}/${results.length} passed`);
-proc.kill();
 process.exit(results.every((x) => x.pass) ? 0 : 1);

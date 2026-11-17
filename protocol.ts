@@ -95,6 +95,14 @@ export const isWorkerInMessage = (m: unknown): m is WorkerInMessage => {
 };
 
 /**
+ * The identifier form of a tool name (`web.search` -> `web_search`): the form
+ * scripts call on the `tools` proxy. Both the extension's tool descriptions
+ * and the worker's bridge derive it from this one function, so the name a
+ * script calls is the name the bridge resolves.
+ */
+export const toIdentifier = (name: string): string => name.replace(/[^A-Za-z0-9_$]/g, "_");
+
+/**
  * The globals the worker injects for tool discovery. The host steers on the
  * same names (`reachesTools`, tool descriptions), so both sides derive from
  * this one list.
