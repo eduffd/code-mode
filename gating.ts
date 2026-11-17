@@ -64,7 +64,7 @@ export const resolveMode = (override: CodeMode | null, settings: unknown): ModeR
 	return parsed;
 };
 
-/** Holds the session-scoped override; mode logic lives nowhere else. */
+/** Holds the session-scoped override. */
 export interface ModeOwner {
 	resolve(): ModeResolution;
 	/** null clears the override: follow settings again. */
@@ -89,10 +89,10 @@ export interface SessionLoadout {
 	callable: readonly { name: string; description: string }[];
 }
 
-/** What pi's ToolLoadoutChanges accepts; "off" yields undefined (tool unregistered). */
+/** What pi's ToolLoadoutChanges accepts. */
 export type LoadoutChanges = { descriptions: Record<string, string>; hiddenDeclarations?: string[] } | undefined;
 
-/** Mode → tool loadout. Byte-equivalent to the pre-extraction behavior. */
+/** Mode → loadout changes. "off" yields undefined: no annotations, pi keeps every declaration as registered. */
 export const buildLoadout = (mode: CodeMode, loadout: SessionLoadout): LoadoutChanges => {
 	if (mode === "off") return undefined;
 	const callable = loadout.callable.filter((t) => t.name !== CODE_MODE_TOOL);

@@ -10,17 +10,14 @@ function check(name, cond, detail = "") {
 	if (!cond) process.exitCode = 1;
 }
 
-const item = (text, console_) => (console_ ? { type: "text", text, console: true } : { type: "text", text });
+const item = (text, captured) => (captured ? { type: "text", text, console: true } : { type: "text", text });
 
-// 1. Empty-result fallback: ok, no output, undefined value.
 let r = formatResult({ ok: true, output: [] });
 check("empty result falls back to the no-output note", r === "(no output; script returned undefined)", r);
 
-// 2. Value section.
 r = formatResult({ ok: true, value: "42", output: [item("hello")] });
 check("ok with output and value: both sections in order", r === "hello\n=> 42", JSON.stringify(r));
 
-// 3. Error section: name, message, stack, no stateLost note.
 r = formatResult({ ok: false, error: { name: "TypeError", message: "boom", stack: "TypeError: boom\n  at x" }, output: [] });
 check(
 	"error outcome: Error line then stack, no stateLost note",
@@ -28,7 +25,6 @@ check(
 	JSON.stringify(r),
 );
 
-// 4. stateLost note appears exactly once, even with journal + error + output.
 r = formatResult({
 	ok: false,
 	error: { name: "WorkerError", message: "worker stopped" },
@@ -43,15 +39,12 @@ check(
 	JSON.stringify(r),
 );
 
-// 5. stateLost note once on an ok outcome too (state lost after a value).
 r = formatResult({ ok: true, value: "1", output: [], stateLost: true });
 check("stateLost: note exactly once on ok outcome", r === "=> 1\n(REPL state was lost)", JSON.stringify(r));
 
-// 6. No stateLost note when state was not lost.
 r = formatResult({ ok: true, value: "1", output: [] });
 check("clean outcome: no stateLost note", !r.includes(note), JSON.stringify(r));
 
-// 7. Under-budget output passes through unmarked.
 const small = [item("a".repeat(1000)), item("b".repeat(1000), true)];
 r = truncateOutput(small);
 check(
@@ -60,13 +53,12 @@ check(
 	`len ${r.length}`,
 );
 
-// 8. Oversized output: honest head-and-tail marker with the true byte count.
 const HEAD_CHARS = 14_000;
 const TAIL_CHARS = 5_000;
 const oversized = [item("x".repeat(30_000))];
 r = truncateOutput(oversized);
 const marker = r.match(/\n\.\.\. \[(.+)\] \.\.\.\n/);
-const expectedOmitted = "x".repeat(30_000 - HEAD_CHARS - TAIL_CHARS); // joined with \n, single item
+const expectedOmitted = "x".repeat(30_000 - HEAD_CHARS - TAIL_CHARS);
 check(
 	"oversized: head-and-tail marker present",
 	marker !== null && marker[1].startsWith("head-and-tail omitted ") && marker[1].endsWith(" bytes"),
@@ -83,7 +75,6 @@ check(
 	`head ok=${r.startsWith("x".repeat(HEAD_CHARS))} tail ok=${r.endsWith("x".repeat(TAIL_CHARS))}`,
 );
 
-// 9. Multi-item oversized output: the omitted middle is the real slice.
 const multi = [item("m".repeat(20_000)), item("n".repeat(20_000))];
 r = truncateOutput(multi);
 const full = "m".repeat(20_000) + "\n" + "n".repeat(20_000);
@@ -100,11 +91,9 @@ check(
 	"reconstruction",
 );
 
-// 10. Exactly at the budget: no marker.
 r = truncateOutput([item("z".repeat(20_000))]);
 check("at-budget output is not truncated", !r.includes("..."), `len ${r.length}`);
 
-// 11. One marker site: format.ts is the only file building the marker text.
 import { readFileSync } from "node:fs";
 const sources = ["format.ts", "index.ts", "gating.ts", "compile.ts", "protocol.ts", "lifecycle.ts", "worker-host.ts"]
 	.map((f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8"));

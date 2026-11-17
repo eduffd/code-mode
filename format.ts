@@ -1,10 +1,9 @@
 // format.ts — every result section the model sees from a code_mode call.
 //
-// Owns the output budget (absorbs output.ts) and the result text: the
-// distilled output, the value or error section, the interrupted-run journal,
-// and the stateLost note. The truncation marker is honest: it reports the
-// true omitted byte count of the head-and-tail elision and claims no spill
-// file, because there is none.
+// Owns the output budget and the result text: the distilled output, the value
+// or error section, the interrupted-run journal, and the stateLost note. The
+// truncation marker is honest: it reports the true omitted byte count of the
+// head-and-tail elision and claims no spill file, because there is none.
 //
 // Loaded through jiti from index.ts; the explicit "./protocol.ts" specifier
 // also keeps it loadable from plain Node type stripping (test-format.mjs).
@@ -24,8 +23,6 @@ export function truncateOutput(items: OutputItem[]): string {
 	const full = parts.join("\n");
 	if (full.length <= MAX_TOTAL_CHARS) return full;
 
-	// Everything between the kept head and tail is exactly what the model
-	// does not see; report its byte count, not a made-up spill destination.
 	const omitted = full.slice(HEAD_CHARS, full.length - TAIL_CHARS);
 	const marker = `\n... [head-and-tail omitted ${Buffer.byteLength(omitted)} bytes] ...\n`;
 	return full.slice(0, HEAD_CHARS) + marker + full.slice(full.length - TAIL_CHARS);

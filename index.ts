@@ -27,11 +27,8 @@ import { createWorkerHost } from "./worker-host";
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export default function codeModeExtension(pi: ExtensionAPI) {
-	// The mode owner: session override first, else the settings boundary in gating.ts.
 	const mode = createModeOwner(() => pi.getSettings());
 
-	// A flat mode key would otherwise be a silent no-op: surface the warning
-	// once, loudly, when the session starts.
 	pi.on("session_start", (_event, ctx) => {
 		const warning = mode.resolve().warning;
 		if (warning) ctx.ui.notify(warning, "warning");
