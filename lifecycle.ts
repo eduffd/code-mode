@@ -18,7 +18,7 @@
 // Pure: no node imports, no I/O, no time reads. All effects (spawn, send,
 // kill, timers, tool answering) are returned for worker-host.ts to interpret.
 // Worker identity is an opaque handle minted here; events carrying a stale
-// handle are dropped, which replaces the scattered `worker === proc` guards.
+// handle are dropped.
 
 import type { ExecOutcome, ToolCallRecord, ToolDecl, WorkerInMessage, WorkerOutMessage } from "./protocol.ts";
 
@@ -97,8 +97,6 @@ export type LifecycleEvent =
 	| { readonly type: "timeoutFired"; readonly id: number }
 	| { readonly type: "toolAnswered"; readonly handle: WorkerHandle; readonly callId: number; readonly name: string; readonly ok: boolean; readonly value?: unknown; readonly error?: string };
 
-// ---------------------------------------------------------------- outcomes
-
 const WORKER_STOPPED_MESSAGE = "code_mode worker stopped; REPL state was lost";
 const BOOT_EXIT_MESSAGE = "code_mode worker exited during boot";
 
@@ -147,8 +145,6 @@ const bootFailedOutcome = (message: string): ExecOutcome => ({
 	stateLost: true,
 });
 
-// ---------------------------------------------------------------- transitions
-
 const IDLE: LifecycleState = { kind: "idle" };
 
 let handleSeq = 0;
@@ -169,7 +165,6 @@ const execSend = (handle: WorkerHandle, exec: AcceptedExec): Effect => ({
 
 const timerEffect = (exec: AcceptedExec): Effect => ({ type: "setTimer", id: exec.id, durationMs: exec.timeoutMs });
 
-/** Activate the next queued exec, or rest at ready when the queue is empty. */
 const drain = (handle: WorkerHandle, queued: readonly AcceptedExec[]): StepResult => {
 	if (queued.length === 0) return { state: { kind: "ready", handle }, effects: [], settled: [] };
 	const [next, ...rest] = queued;
@@ -177,7 +172,6 @@ const drain = (handle: WorkerHandle, queued: readonly AcceptedExec[]): StepResul
 	return { state, effects: [execSend(handle, next), timerEffect(next)], settled: [] };
 };
 
-/** Settle every open exec of a running state as worker-stopped; journals ride along. */
 const stopRunning = (state: RunningState): SettledExec[] => [
 	{ id: state.active.exec.id, outcome: workerStoppedOutcome(state.active.journal) },
 	...state.queued.map((exec) => ({ id: exec.id, outcome: workerStoppedOutcome() })),
@@ -189,7 +183,6 @@ const settleBootFailure = (queued: readonly AcceptedExec[], message: string): St
 	settled: queued.map((exec) => ({ id: exec.id, outcome: bootFailedOutcome(message) })),
 });
 
-/** Retry the boot without permission flags; the queued execs keep waiting. */
 const retryBoot = (state: BootingState): StepResult => {
 	const handle = mintHandle();
 	return {
@@ -234,8 +227,9 @@ const stepBooting = (state: BootingState, event: LifecycleEvent): StepResult => 
 			if (event.handle !== state.handle) return stay(state);
 			return state.attempt === 1 ? retryBoot(state) : settleBootFailure(state.queued, event.message);
 		case "workerDied":
-			// The host reports boot failures as bootFailed; this arm is the same
-			// fact seen from the exit event: a died spawn is a failed boot attempt.
+			// Defensive: the host routes boot failures to bootFailed and emits
+			// workerDied only after boot, so this arm should never fire — it keeps
+			// the table total and treats a died spawn as a failed boot anyway.
 			if (event.handle !== state.handle) return stay(state);
 			return state.attempt === 1 ? retryBoot(state) : settleBootFailure(state.queued, BOOT_EXIT_MESSAGE);
 		case "stopRequested": {

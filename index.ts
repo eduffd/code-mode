@@ -37,8 +37,8 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 
 	function resolveMode(): "on" | "off" | "only" {
 		if (modeOverride !== null) return modeOverride;
-		// The settings file is external data: pi's declared type only names "on",
-		// so read the value as unknown before comparing.
+		// Settings are external data: the declared schema lacks "off", but user
+		// JSON can carry any mode string, so read the value as unknown.
 		const setting: unknown = pi.getSettings().codemode?.mode;
 		return setting === "only" ? "only" : setting === "off" ? "off" : "on";
 	}
@@ -49,7 +49,6 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 
 	const host = createWorkerHost({ onEvent: dispatch });
 
-	/** Run one core transition, resolve settled futures, then interpret effects. */
 	function dispatch(event: LifecycleEvent): void {
 		const next = step(state, event);
 		state = next.state;
@@ -200,8 +199,6 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			}
 			if (arg === "on" || arg === "off" || arg === "only") {
 				modeOverride = arg;
-				// "off" stops the worker: the one stop event that replaces the old
-				// killWorker call sites (command, exit, session events, timeout).
 				if (arg === "off") dispatch({ type: "stopRequested" });
 				ctx.ui.notify(`code_mode mode: ${arg}`);
 				return;

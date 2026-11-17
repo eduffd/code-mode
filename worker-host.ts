@@ -23,7 +23,6 @@ const STDERR_LINES = 20;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** One captured output item of a tool result's content array. */
 const isTextItem = (item: unknown): item is { type: "text"; text: string } =>
 	typeof item === "object" &&
 	item !== null &&
@@ -32,7 +31,6 @@ const isTextItem = (item: unknown): item is { type: "text"; text: string } =>
 	"text" in item &&
 	typeof item.text === "string";
 
-/** Join the text items of a tool result's content array; "" when none. */
 const contentText = (content: unknown): string =>
 	Array.isArray(content)
 		? content
@@ -63,14 +61,16 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 	const timers = new Map<number, NodeJS.Timeout>();
 	let toolContext: ToolContextLike | undefined;
 
-	// ---- pidfile: a best-effort breadcrumb (parent + child pid) so cleanup can
-	// be scoped to recorded pids instead of process names. Last boot wins.
+	// ---- pidfile: a best-effort breadcrumb (parent + child pid) for cleanup
+	// scoped to recorded pids instead of process names. Read today by the
+	// verify lane drivers; scripts/worker-cleanup.mjs (PR5) becomes the
+	// official consumer. Last boot wins.
 
 	const writePidFile = (proc: ChildProcess): void => {
 		try {
 			writeFileSync(pidFile, `${JSON.stringify({ parent: process.pid, child: proc.pid })}\n`);
 		} catch {
-			// unwritable dir: the breadcrumb is optional, the worker is not
+			// the breadcrumb is optional
 		}
 	};
 
@@ -78,11 +78,9 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		try {
 			unlinkSync(pidFile);
 		} catch {
-			// already gone or never written
+			// already gone
 		}
 	};
-
-	// ---- spawn + boot handshake
 
 	const flagsToArgv = (flags: SpawnFlags): string[] =>
 		flags === "permission"
@@ -139,8 +137,6 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		proc.once("error", (err: Error) => fail(`code_mode worker failed to spawn: ${err.message}`));
 		proc.once("exit", () => fail("code_mode worker exited during boot"));
 	};
-
-	// ---- kill / send / timers / tool answers
 
 	const interpretKill = (handle: WorkerHandle): void => {
 		const proc = children.get(handle);

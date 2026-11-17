@@ -21,8 +21,6 @@ const check = (name, cond, detail = "") => {
 	if (!cond) console.log(`FAIL  ${name}${detail ? ` — ${detail}` : ""}`);
 };
 
-// ---------------------------------------------------------------- fixtures
-
 let seqCounter = 0;
 const mkHandle = () => ({ seq: ++seqCounter });
 const mkExec = (id, timeoutMs = 1000) => ({ id, code: `script(${id});`, tools: [{ name: "bash", description: "Bash" }], timeoutMs });
@@ -107,7 +105,6 @@ for (const [stateName, mkState] of Object.entries(STATES)) {
 			check(`shape: ${stateName} x ${eventName}`, false, JSON.stringify(result)?.slice(0, 120));
 			continue;
 		}
-		// No-exec-vanishes: open exec is settled exactly once or stays open — never both, never neither.
 		const before = openIds(state);
 		const after = new Set(openIds(result.state));
 		const settledIds = result.settled.map((s) => s.id);
@@ -139,7 +136,6 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const outcomeNames = (settled) => settled.map((s) => `${s.id}:${s.outcome.ok ? "ok" : s.outcome.error?.name ?? "err"}`);
 const effectTypes = (result) => result.effects.map((e) => e.type);
 
-// idle
 {
 	const r = step(idle(), EVENTS.execRequested);
 	check("idle + execRequested -> booting attempt 1", r.state.kind === "booting" && r.state.attempt === 1, JSON.stringify(r.state));
@@ -151,7 +147,6 @@ const effectTypes = (result) => result.effects.map((e) => e.type);
 	check("idle + bootFailed stays idle", step(idle(), EVENTS.bootFailed).state.kind === "idle");
 }
 
-// booting
 {
 	const r = step(booting1(), EVENTS.bootFailed);
 	check("booting(1) + bootFailed -> retry booting attempt 2", r.state.kind === "booting" && r.state.attempt === 2, JSON.stringify(r.state));
@@ -177,7 +172,6 @@ const effectTypes = (result) => result.effects.map((e) => e.type);
 	check("booting ignores worker messages, timeouts, tool answers", (() => { const s = booting1(); return step(s, EVENTS.toolCall).state === s && step(s, EVENTS.timeoutFired).state === s && step(s, EVENTS.toolAnswered).state === s; })());
 }
 
-// ready
 {
 	const r = step(ready(), EVENTS.execRequested);
 	check("ready + execRequested -> running with send + setTimer", r.state.kind === "running" && r.state.active.exec.id === 9 && same(effectTypes(r), ["send", "setTimer"]), JSON.stringify(r.effects));
@@ -191,7 +185,6 @@ const effectTypes = (result) => result.effects.map((e) => e.type);
 	check("ready + toolCall is dropped (no active exec)", step(ready(), EVENTS.toolCall).effects.length === 0);
 }
 
-// running
 {
 	const r = step(running(), EVENTS.endActive);
 	check("running + end(active) -> ready, settles ok with stateLost:false", r.state.kind === "ready" && same(outcomeNames(r.settled), ["1:ok"]) && r.settled[0].outcome.stateLost === false, JSON.stringify(r.settled));
@@ -232,7 +225,6 @@ const effectTypes = (result) => result.effects.map((e) => e.type);
 	check("running + booted/bootFailed cannot act on a live worker", step(running(), EVENTS.booted).state.kind === "running" && step(running(), EVENTS.bootFailed).state.kind === "running");
 }
 
-// FIFO drain order (queued execs, no promise chain)
 {
 	let s = runningQueue();
 	const order = [];
@@ -263,8 +255,6 @@ for (const file of ["lifecycle.ts", "index.ts"]) {
 	const src = stripComments(readFileSync(new URL(`./${file}`, import.meta.url), "utf8"));
 	check(`${file}: no reject channel in code (wedge class unwritable)`, !/\breject\b/.test(src), src.match(/.{0,40}\breject\b.{0,40}/)?.[0]);
 }
-
-// ---------------------------------------------------------------- report
 
 const passed = results.filter((r) => r.pass).length;
 console.log(`${passed}/${results.length} passed`);
