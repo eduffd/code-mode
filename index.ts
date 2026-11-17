@@ -29,9 +29,15 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 export default function codeModeExtension(pi: ExtensionAPI) {
 	const mode = createModeOwner(() => pi.getSettings());
 
+	// A flat mode key would otherwise be a silent no-op: surface the warning
+	// once, loudly, when the session starts — the TUI notification when UI
+	// exists, stderr otherwise (pi's own convention for extension
+	// diagnostics).
 	pi.on("session_start", (_event, ctx) => {
 		const warning = mode.resolve().warning;
-		if (warning) ctx.ui.notify(warning, "warning");
+		if (!warning) return;
+		ctx.ui.notify(warning, "warning");
+		if (!ctx.hasUI) console.warn(warning);
 	});
 
 	let state: LifecycleState = { kind: "idle" };
