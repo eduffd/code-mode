@@ -10,7 +10,14 @@
 // the flagged spawn dies (execArgv carries --permission); the plain retry
 // spawned without flags boots normally. No fs access needed.
 
+import { isWorkerOutMessage } from "../../../protocol.ts";
+
 let lastExecId = null;
+
+const sendProtocol = (msg) => {
+	if (!isWorkerOutMessage(msg)) throw new Error(`fake-worker produced a non-protocol message: ${JSON.stringify(msg)}`);
+	process.send(msg);
+};
 
 process.on("message", (msg) => {
 	if (!msg || typeof msg !== "object") return;
@@ -19,7 +26,7 @@ process.on("message", (msg) => {
 			process.exit(137);
 			break;
 		case "__cm_deliverEnd":
-			process.send({ type: "end", id: lastExecId, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
+			sendProtocol({ type: "end", id: lastExecId, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
 			break;
 		case "exec":
 			lastExecId = msg.id;
@@ -32,4 +39,4 @@ if (process.env.CM_FAKE_BOOT_CRASH === "1" && process.execArgv.includes("--permi
 	process.exit(1);
 }
 
-process.send({ type: "ready" });
+sendProtocol({ type: "ready" });

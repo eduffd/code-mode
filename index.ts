@@ -15,56 +15,16 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { truncateOutput, type OutputItem } from "./output";
+import { truncateOutput } from "./output";
+import {
+	DISCOVERY_GLOBALS,
+	DISCOVERY_LISTING,
+	isWorkerOutMessage,
+	type ExecOutcome,
+	type ToolDecl,
+} from "./protocol";
 
-// ---------------------------------------------------------------- protocol types
-
-interface ToolDecl {
-	name: string;
-	description: string;
-}
-
-interface WorkerError {
-	name: string;
-	message: string;
-	stack?: string;
-}
-
-type WorkerOutMessage =
-	| { type: "ready" }
-	| { type: "toolCall"; callId: number; name: string; args: unknown }
-	| {
-			type: "end";
-			id: number;
-			ok: boolean;
-			value?: string;
-			error?: WorkerError;
-			output: OutputItem[];
-	  };
-
-const isWorkerOutMessage = (m: unknown): m is WorkerOutMessage => {
-	if (typeof m !== "object" || m === null) return false;
-	const t = (m as { type?: unknown }).type;
-	if (t === "ready") return true;
-	if (t === "toolCall") {
-		const x = m as { callId?: unknown; name?: unknown };
-		return typeof x.callId === "number" && typeof x.name === "string";
-	}
-	if (t === "end") {
-		const x = m as { id?: unknown; ok?: unknown; output?: unknown };
-		return typeof x.id === "number" && typeof x.ok === "boolean" && Array.isArray(x.output);
-	}
-	return false;
-};
-
-interface ExecOutcome {
-	ok: boolean;
-	value?: string;
-	error?: WorkerError;
-	output: OutputItem[];
-	/** True when the worker died or was killed around this call: earlier REPL state is gone. */
-	stateLost: boolean;
-}
+// ---------------------------------------------------------------- exec plumbing
 
 interface ExecWaiter {
 	resolve: (outcome: Omit<ExecOutcome, "stateLost">) => void;
@@ -75,7 +35,6 @@ interface ExecWaiter {
 // ---------------------------------------------------------------- constants
 
 const DEFAULT_TIMEOUT_MS = 120_000;
-const DISCOVERY_GLOBALS = /\b(searchTools|describeTool|describeNamespace|ALL_TOOLS)\b/;
 const CODE_MODE_TOOL = "code_mode";
 
 const workerPath = fileURLToPath(new URL("./repl-worker.js", import.meta.url));
@@ -320,7 +279,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			"Top-level declarations persist across calls (`const x = ...` in one call is readable in the next;",
 			"redeclaring the same name throws — reassign without `const` instead).",
 			"Output helpers: `text(s)`, `image(data, mimeType)`, `exit(value)`; `console.log` is captured.",
-			"Discovery: `ALL_TOOLS`, `searchTools(query)`, `describeTool(name)`, `describeNamespace(name)`.",
+			`Discovery: ${DISCOVERY_LISTING}.`,
 			"Only distilled output enters the conversation; return or `text()` what matters.",
 			"Long scripts are killed at the timeout and the REPL state is lost.",
 		].join(" "),
@@ -385,7 +344,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 				"",
 				"- Top-level declarations persist across calls (declare once; reassign without `const` afterwards).",
 				"- `text(s)`, `image(data, mimeType)`, `exit(value)`, captured `console.*`.",
-				"- `ALL_TOOLS`, `searchTools(query)`, `describeTool(name)`, `describeNamespace(name)` for discovery.",
+				`- ${DISCOVERY_LISTING} for discovery.`,
 				"- Only distilled output enters the conversation; return or `text()` what matters.",
 			].join("\n");
 			return { descriptions: { [CODE_MODE_TOOL]: description }, hiddenDeclarations };

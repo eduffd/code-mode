@@ -1,6 +1,7 @@
 // Standalone test harness: forks repl-worker.js and exercises the protocol.
 import { fork } from "node:child_process";
 import path from "node:path";
+import { isWorkerOutMessage } from "./protocol.ts";
 
 const workerPath = path.resolve("repl-worker.js");
 const proc = fork(workerPath, [], { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit", "ipc"] });
@@ -12,6 +13,7 @@ let readyResolve;
 const ready = new Promise((r) => (readyResolve = r));
 
 proc.on("message", (msg) => {
+	if (!isWorkerOutMessage(msg)) return;
 	if (msg.type === "ready") return readyResolve();
 	if (msg.type === "toolCall") {
 		const value = toolAnswers.get(msg.name);
