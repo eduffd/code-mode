@@ -187,9 +187,7 @@ check(
 	JSON.stringify(r.output),
 );
 
-// 18. Live capture regression (acceptance finding): with copy-once capture,
-// mutations after the declaration line left the captured global stale —
-// inc() bumped only the IIFE-local binding, so a later exec read 1 forever.
+// 18. Live capture regression (acceptance finding).
 r = await exec("var acc = 1; function tick() { acc += 1; return acc; } tick()");
 check("live-capture: var+function mutation returns the updated value", r.ok && r.value === "2", JSON.stringify(r.value));
 r = await exec("acc");

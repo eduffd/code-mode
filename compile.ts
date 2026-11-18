@@ -11,8 +11,10 @@
 // - the last top-level expression statement is returned, so completion values
 //   behave like a REPL (`1 + 1` yields 2);
 // - top-level declarations persist: each installs a live accessor on
-//   `globalThis` closed over the IIFE-local binding, so reads and writes via
-//   the bare name (any exec) or via `globalThis` see the current value;
+//   `globalThis` closed over the IIFE-local binding — var/let/function/class
+//   reads and writes via the bare name (any exec) or via `globalThis` see the
+//   current value; const keeps its frozen binding and mirrors reassignments
+//   through the accessor;
 // - redeclaring a name an earlier exec already captured throws the taught
 //   error ("... has already been declared — reassign without const instead").
 //   Plain assignment (`x = 2`) is the reassignment channel.
@@ -227,18 +229,10 @@ export const compileScript = (code: string, opts: CompileOptions = {}): Compiled
 		}
 	}
 
-	// Splice a live accessor after each top-level declaration. get/set close
-	// over the IIFE-local binding, so every later read and write — bare name in
-	// any exec, or via globalThis — sees the current value, including mutations
-	// that happen after this line (function bodies, loops, reassignment). const
-	// bindings are frozen: their accessor holds a cell initialized from the
-	// binding, so the taught reassign channel still updates the persisted value
-	// while the binding itself stays truthful. Names come from IdentifierNode
-	// (patternNames), so the bare-name reference is always valid source, and
-	// JSON.stringify makes the defineProperty key name-agnostic. The splice is
-	// inline: an initializer that throws installs no accessor, and repeated
-	// declarations of one name share the first accessor (var/function and
-	// repeated var share one binding, so the first point covers both).
+	// const-cell and shared-first-accessor semantics live in DESIGN.md §5
+	// (check-docs keeps them honest). Names come from IdentifierNode
+	// (patternNames), so the bare-name splice is always valid source — Unicode
+	// identifiers included; JSON.stringify makes the key name-agnostic.
 	const last = statements[statements.length - 1];
 	let source = "";
 	let pos = 0;

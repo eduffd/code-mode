@@ -218,6 +218,27 @@ try {
 }
 check("drift: same-script duplicate declaration is a SyntaxError", dup instanceof SyntaxError, JSON.stringify(dup?.message));
 
+// ---- Unicode identifiers (valid JS; the accessor splice must not assume ASCII)
+
+r = await run("var π = 3; π");
+check(
+	"drift: Unicode identifier captures",
+	r.value === 3 && sandbox["π"] === 3,
+	JSON.stringify({ value: r.value, pi: sandbox["π"] }),
+);
+r = await run("π");
+check("drift: Unicode identifier persists across execs", r.value === 3, JSON.stringify(r.value));
+r = await run("π = 7; globalThis.π");
+check("drift: Unicode bare-name write reaches the accessor", r.value === 7, JSON.stringify(r.value));
+r = await run("let café = 1; café = 9; café");
+check(
+	"drift: Unicode let stays live in-exec",
+	r.value === 9 && sandbox["café"] === 9,
+	JSON.stringify({ value: r.value, cafe: sandbox["café"] }),
+);
+e = redeclare("var π = 9;");
+check("drift: redeclaring a persisted Unicode name throws", e instanceof SyntaxError, JSON.stringify(e?.message));
+
 // ---- syntax errors stay honest
 
 let syntax = null;
