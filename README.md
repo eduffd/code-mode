@@ -33,8 +33,8 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `gating.ts` — mode owner: settings parse at one boundary (nested key accepted, flat keys warned), session override, loadout builders, the pure `/code-mode` decision
 - `format.ts` — result formatting: output budget (head-and-tail truncation with the honest `... [head-and-tail omitted N bytes] ...` marker, N the true omitted byte count), value/error sections, interrupted-run journal, the stateLost note
 - `repl-worker.js` — forked worker: persistent vm context, validating tool bridge over fork IPC, disconnect self-exit
-- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 30 checks)
-- `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 32 checks)
+- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 37 checks)
+- `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 49 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 56 checks)
 - `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 14 checks)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
@@ -54,8 +54,8 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 
 ```sh
 npm install                      # once, for acorn
-node test-worker.mjs             # 30 checks
-node test-compile.mjs            # 32 checks
+node test-worker.mjs             # 37 checks
+node test-compile.mjs            # 49 checks
 node test-lifecycle-core.mjs     # 56 checks
 node test-format.mjs             # 14 checks
 node scripts/check-docs.mjs      # docs match the repository

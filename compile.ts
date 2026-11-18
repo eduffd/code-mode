@@ -10,7 +10,11 @@
 // - top-level `await` and `return` work (the IIFE provides them);
 // - the last top-level expression statement is returned, so completion values
 //   behave like a REPL (`1 + 1` yields 2);
-// - top-level declarations persist: each is captured to `globalThis.<name>`;
+// - top-level declarations persist: each installs a live accessor on
+//   `globalThis` closed over the IIFE-local binding — var/let/function/class
+//   reads and writes via the bare name (any exec) or via `globalThis` see the
+//   current value; const keeps its frozen binding and mirrors reassignments
+//   through the accessor;
 // - redeclaring a name an earlier exec already captured throws the taught
 //   error ("... has already been declared — reassign without const instead").
 //   Plain assignment (`x = 2`) is the reassignment channel.
@@ -163,8 +167,6 @@ export interface CompileOptions {
 
 // ---------------------------------------------------------------- helpers
 
-const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
-
 const patternNames = (node: unknown, acc: string[] = []): string[] => {
 	if (isIdentifierNode(node)) {
 		acc.push(node.name);
@@ -227,30 +229,28 @@ export const compileScript = (code: string, opts: CompileOptions = {}): Compiled
 		}
 	}
 
-	// Splice `globalThis.<name> = <name>;` after each top-level declaration.
-	// The original declaration stays as-is (it works inside the IIFE); the
-	// appended lines copy the binding into persistent globalThis storage. The
-	// last top-level expression statement becomes an explicit `return` so the
-	// IIFE reproduces the native Script completion-value semantics.
+	// const-cell and shared-first-accessor semantics live in DESIGN.md §5
+	// (check-docs keeps them honest). Names come from IdentifierNode
+	// (patternNames), so the bare-name splice is always valid source — Unicode
+	// identifiers included; JSON.stringify makes the key name-agnostic.
 	const last = statements[statements.length - 1];
 	let source = "";
 	let pos = 0;
+	const spliced = new Set<string>();
 	for (const { stmt, records } of perStatement) {
 		if (stmt === last && isExpressionStatementNode(stmt)) {
 			source += `${code.slice(pos, stmt.start)}return ${code.slice(stmt.start, stmt.end)};`;
 		} else {
 			source += code.slice(pos, stmt.end);
 		}
-		if (records.length > 0) {
+		for (const d of records) {
+			if (spliced.has(d.name)) continue;
+			spliced.add(d.name);
+			const key = JSON.stringify(d.name);
 			source +=
-				"\n" +
-				records
-					.map((d) =>
-						IDENT_RE.test(d.name)
-							? `globalThis.${d.name} = ${d.name};`
-							: `globalThis[${JSON.stringify(d.name)}] = ${d.name};`,
-					)
-					.join("\n");
+				d.kind === "const"
+					? `\n{ let cell = ${d.name}; Object.defineProperty(globalThis, ${key}, { get: () => cell, set: (v) => { cell = v; }, configurable: true, enumerable: true }); }`
+					: `\nObject.defineProperty(globalThis, ${key}, { get: () => ${d.name}, set: (v) => { ${d.name} = v; }, configurable: true, enumerable: true });`;
 		}
 		pos = stmt.end;
 	}
