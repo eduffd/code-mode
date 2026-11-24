@@ -23,3 +23,4 @@ jobs:
       - run: node .claude/skills/exec-lifecycle/check-exec-lifecycle.mjs
       - run: node scripts/check-docs.mjs
       - run: node scripts/check-structure.mjs
+      - run: node scripts/check-counts.mjs

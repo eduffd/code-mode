@@ -90,6 +90,7 @@ for (const step of [
 	"node .claude/skills/exec-lifecycle/check-exec-lifecycle.mjs",
 	"node scripts/check-docs.mjs",
 	"node scripts/check-structure.mjs",
+	"node scripts/check-counts.mjs",
 ]) {
 	if (!workflow.includes(step)) problem("workflow-steps", `ci.yml does not run \`${step}\``);
 }

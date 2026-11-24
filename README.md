@@ -33,17 +33,19 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `gating.ts` — mode owner: settings parse at one boundary (nested key accepted, flat keys warned), session override, loadout builders, the pure `/code-mode` decision
 - `format.ts` — result formatting: output budget (head-and-tail truncation with the honest `... [head-and-tail omitted N bytes] ...` marker, N the true omitted byte count), value/error sections, interrupted-run journal, the stateLost note
 - `repl-worker.js` — forked worker: persistent vm context, validating tool bridge over fork IPC, disconnect self-exit
-- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 39 checks)
-- `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 49 checks)
-- `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 57 checks)
+- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 41 checks)
+- `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 50 checks)
+- `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 58 checks)
 - `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 14 checks)
 - `test-worker-host.mjs` — drives the real effect interpreter + core with a worker that dies pre-boot: bootFailed routing, never workerDied (`node test-worker-host.mjs`)
 - `test-worker-cleanup.mjs` — proves the cleanup script's safety contract on real processes (`node test-worker-cleanup.mjs`)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
 - `scripts/check-structure.mjs` — structural gates: one compile path, module boundaries (only `worker-host.ts` spawns; `protocol.ts` stays erasable), the tsc-gate wiring, skill-file integrity (`node scripts/check-structure.mjs`)
+- `scripts/check-counts.mjs` — every suite count quoted in these docs must match the suite's real output (`node scripts/check-counts.mjs`)
+- `AGENTS.md` — the rule-to-enforcement table: every rule paired with the gate that makes its mistake impossible
 - `tsconfig.json` — the strict-tsc gate config (`strict`, `noUncheckedIndexedAccess`); `evidence/tsc.txt` records the passing run
 - `scripts/worker-cleanup.mjs` — kills only the child pids of a given pid (`node scripts/worker-cleanup.mjs --pid <pid> [--dry-run]`); the consumer for the worker-host pidfile when a session died
-- `.github/workflows/ci.yml` — runs the ten gates on every push and pull request
+- `.github/workflows/ci.yml` — runs the eleven gates on every push and pull request
 - `.pi/settings.json` — the workspace mode preference, in the nested shape
 
 ## Limits
@@ -58,11 +60,11 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 
 ```sh
 npm install                      # once, for acorn
-node test-worker.mjs             # 39 checks
-node test-compile.mjs            # 49 checks
-node test-lifecycle-core.mjs     # 57 checks
+node test-worker.mjs             # 41 checks
+node test-compile.mjs            # 50 checks
+node test-lifecycle-core.mjs     # 58 checks
 node test-format.mjs             # 14 checks
 node scripts/check-docs.mjs      # docs match the repository
 ```
 
-CI (`.github/workflows/ci.yml`) runs ten gates on every push and pull request: the strict-tsc gate (`./node_modules/.bin/tsc --noEmit`), the six suites above, the lifecycle interleaving checker (`.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs`, 85 scenarios plus replay probes; jiti is a devDependency), and the two assertion gates `scripts/check-docs.mjs` + `scripts/check-structure.mjs`. `.claude/skills/verify/` holds the driver skill and feature recipes for proving user-facing behavior end to end.
+CI (`.github/workflows/ci.yml`) runs eleven gates on every push and pull request: the strict-tsc gate (`./node_modules/.bin/tsc --noEmit`), the six suites above, the lifecycle interleaving checker (`.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs`, 85 scenarios plus replay probes; jiti is a devDependency), and the assertion gates `scripts/check-docs.mjs`, `scripts/check-structure.mjs`, and `scripts/check-counts.mjs`. `.claude/skills/verify/` holds the driver skill and feature recipes for proving user-facing behavior end to end. `AGENTS.md` pairs every rule with the gate that enforces it.
