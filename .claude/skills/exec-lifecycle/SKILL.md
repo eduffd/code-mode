@@ -37,7 +37,7 @@ Add `--real` to also SIGKILL a real `repl-worker.js` mid-exec and prove on a rea
 
 If you change the lifecycle, run this check and only move the **Sync commit** line forward after you have read the diff and confirmed this skill still describes the code at the new commit (module names, event sources, state variants, bound).
 
-**Sync commit: 453d2d1 (final program merge; lifecycle core with resolve-only settlement)** — re-synced after reading the diff across PR3-PR6: the checker drives the unchanged public surface, the scenario set is unchanged (alphabet `{end, crash, off, tick}`, max length 3, 85 scenarios), and the property wording still matches the code.
+**Sync commit: aa2b79a (gap closure; outcome fields `bootFailed`/`replNames` added)** — re-synced after reading the diff across B1-B3: the checker drives the unchanged public surface, the step table and event set are unchanged (alphabet `{end, crash, off, tick}`, max length 3, 85 scenarios), the two new outcome fields are optional and additive, and the property wording still matches the code.
 
 ## Covered code
 
