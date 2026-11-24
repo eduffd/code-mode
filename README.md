@@ -36,7 +36,7 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 41 checks)
 - `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 50 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 58 checks)
-- `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 14 checks)
+- `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 19 checks)
 - `test-worker-host.mjs` — drives the real effect interpreter + core with a worker that dies pre-boot: bootFailed routing, never workerDied (`node test-worker-host.mjs`)
 - `test-worker-cleanup.mjs` — proves the cleanup script's safety contract on real processes (`node test-worker-cleanup.mjs`)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
@@ -53,7 +53,7 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - REPL state lives in the worker process: lost on Pi restart, session switch, script timeout (worker killed + respawned, model told explicitly), or crash.
 - Scripts that compute without awaiting are stopped only by the timeout (default 120 s, per-call `timeout_ms`).
 - Output is truncated in memory at 20 000 characters (14 000 head + 5 000 tail) with the honest `... [head-and-tail omitted N bytes] ...` marker. No file is ever written anywhere in this path.
-- The `image()` helper captures an image item in the worker's output list; only text items are formatted into the result today.
+- The `image()` helper captures an image item in the worker's output list; image items ride through to the result as image content blocks, each preceded by a label naming its index, mime type, and decoded byte size. The text output budget applies to text only.
 - Deep imports of internal modules are blocked by the package `exports` map; the extension is loaded by path (the entry resolves as `code-mode`).
 
 ## Development
@@ -63,7 +63,7 @@ npm install                      # once, for acorn
 node test-worker.mjs             # 41 checks
 node test-compile.mjs            # 50 checks
 node test-lifecycle-core.mjs     # 58 checks
-node test-format.mjs             # 14 checks
+node test-format.mjs             # 19 checks
 node scripts/check-docs.mjs      # docs match the repository
 ```
 

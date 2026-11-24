@@ -92,6 +92,49 @@ check(
 r = truncateOutput([item("z".repeat(20_000))]);
 check("at-budget output is not truncated", !r.includes("..."), `len ${r.length}`);
 
+import { formatResultContent } from "./format.ts";
+
+// Image output items ride through as labeled image blocks after the text section.
+let c = formatResultContent({ ok: true, value: "made", output: [item("done")] });
+check(
+	"content without images: one text block, text only",
+	c.length === 1 && c[0].type === "text" && c[0].text === "done\n=> made",
+	JSON.stringify(c),
+);
+
+const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+c = formatResultContent({ ok: true, value: "made", output: [{ type: "image", data: png, mimeType: "image/png" }] });
+const pngBytes = Buffer.from(png, "base64").length;
+check(
+	"image item: label names index, total, mime, decoded byte size",
+	c.length === 3 && c[1].type === "text" && c[1].text === `[Image 1/1 (image/png, ${pngBytes} bytes)]`,
+	JSON.stringify(c[1]),
+);
+check(
+	"image item: block carries the data and mimeType unchanged",
+	c[2].type === "image" && c[2].data === png && c[2].mimeType === "image/png",
+	JSON.stringify(c[2]),
+);
+
+c = formatResultContent({
+	ok: true,
+	value: "ok",
+	output: [{ type: "image", data: png, mimeType: "image/png" }, item("between"), { type: "image", data: png, mimeType: "image/png" }],
+});
+check(
+	"two image items: numbered in order, images after the text section",
+	c.length === 5 && c[1].text === `[Image 1/2 (image/png, ${pngBytes} bytes)]` && c[3].text === `[Image 2/2 (image/png, ${pngBytes} bytes)]`,
+	JSON.stringify(c.map((b) => b.type === "text" ? b.text : b.type)),
+);
+
+const oversizedWithImage = [item("x".repeat(30_000)), { type: "image", data: png, mimeType: "image/png" }];
+c = formatResultContent({ ok: true, output: oversizedWithImage });
+check(
+	"truncated text with an image: text budget applies, image still rides",
+	c[0].text.includes("head-and-tail omitted") && c.some((b) => b.type === "image"),
+	`blocks=${c.length} imageAt=${c.findIndex((b) => b.type === "image")}`,
+);
+
 import { readFileSync } from "node:fs";
 const sources = ["format.ts", "index.ts", "gating.ts", "compile.ts", "protocol.ts", "lifecycle.ts", "worker-host.ts"]
 	.map((f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8"));

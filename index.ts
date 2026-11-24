@@ -3,7 +3,7 @@
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildLoadout, createModeOwner, handleCommand, CODE_MODE_TOOL } from "./gating.ts";
-import { formatResult } from "./format.ts";
+import { formatResultContent } from "./format.ts";
 import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol.ts";
 import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle.ts";
 import { createWorkerHost } from "./worker-host.ts";
@@ -87,7 +87,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			);
 			host.setToolContext(undefined);
 			return {
-				content: [{ type: "text" as const, text: formatResult(outcome) }],
+				content: formatResultContent(outcome),
 				details: { ok: outcome.ok, stateLost: outcome.stateLost },
 				isError: !outcome.ok,
 			};

@@ -36,3 +36,22 @@ export function formatResult(outcome: ExecOutcome): string {
 	if (outcome.stateLost) sections.push("(REPL state was lost)");
 	return sections.join("\n") || "(no output; script returned undefined)";
 }
+
+type ResultBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
+/** Every image item in a script's output, in script order, each preceded by a label text block. */
+function imageBlocks(output: OutputItem[]): ResultBlock[] {
+	const images = output.filter((item): item is Extract<OutputItem, { type: "image" }> => item.type === "image");
+	const blocks: ResultBlock[] = [];
+	images.forEach((item, i) => {
+		const bytes = Buffer.from(item.data, "base64").length;
+		blocks.push({ type: "text", text: `[Image ${i + 1}/${images.length} (${item.mimeType}, ${bytes} bytes)]` });
+		blocks.push({ type: "image", data: item.data, mimeType: item.mimeType });
+	});
+	return blocks;
+}
+
+/** The full result content for one settled exec: the text section, then image blocks. */
+export function formatResultContent(outcome: ExecOutcome): ResultBlock[] {
+	return [{ type: "text", text: formatResult(outcome) }, ...imageBlocks(outcome.output)];
+}
