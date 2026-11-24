@@ -32,7 +32,7 @@ export type WorkerInMessage =
 export type WorkerOutMessage =
 	| { type: "ready" }
 	| { type: "toolCall"; execId: number; callId: number; name: string; args: unknown }
-	| { type: "end"; id: number; ok: boolean; value?: string; error?: WorkerError; output: OutputItem[] };
+	| { type: "end"; id: number; ok: boolean; value?: string; error?: WorkerError; output: OutputItem[]; replNames?: string[] };
 
 /** One answered nested tool call, journaled per exec for interrupted-run reporting. */
 export interface ToolCallRecord {
@@ -52,6 +52,8 @@ export interface ExecOutcome {
 	journal?: readonly ToolCallRecord[];
 	/** True only on boot-failed outcomes: the worker never ran this script. */
 	bootFailed?: true;
+	/** Top-level names the worker's REPL currently persists, as reported by the last settled exec. */
+	replNames?: readonly string[];
 }
 
 /** Guard for the messages a worker may send to the host. */

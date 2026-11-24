@@ -77,7 +77,11 @@ check("only: description lists tools.bash", load?.descriptions?.code_mode?.inclu
 check("only: description lists tools.read", load?.descriptions?.code_mode?.includes("tools.read(args)"), load?.descriptions?.code_mode);
 
 await command.handler("status", uiCtx);
-check("status: reports session override", notifications.at(-1)?.m === "code_mode mode: only (session override)", notifications.at(-1));
+check(
+	"status: reports session override and REPL state (no completed script yet in this driver)",
+	notifications.at(-1)?.m === "code_mode mode: only (session override); REPL state: no completed script yet",
+	notifications.at(-1),
+);
 
 await command.handler("off", uiCtx);
 check("off: prepareLoadout returns undefined", tool.prepareLoadout(loadout()) === undefined, tool.prepareLoadout(loadout()));

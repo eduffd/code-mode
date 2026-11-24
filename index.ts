@@ -22,6 +22,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 
 	let state: LifecycleState = { kind: "idle" };
 	let execSeq = 0;
+	let lastReplNames: readonly string[] | undefined;
 	const waiters = new Map<number, (outcome: ExecOutcome) => void>();
 
 	const host = createWorkerHost({ onEvent: dispatch });
@@ -86,6 +87,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 				ctx,
 			);
 			host.setToolContext(undefined);
+			if (outcome.replNames) lastReplNames = outcome.replNames;
 			return {
 				content: formatResultContent(outcome, mode.resolve().mode),
 				details: { ok: outcome.ok, stateLost: outcome.stateLost },
@@ -97,6 +99,12 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 
 	// ---- /code-mode command: gating.ts decides, this applies the side effects.
 
+/** Display form of the worker's persisted REPL names; long lists stay bounded. */
+function replStateSummary(names: readonly string[]): string {
+	const shown = names.length > 12 ? [...names.slice(0, 12), `+${names.length - 12} more`] : [...names];
+	return `${names.length} binding${names.length === 1 ? "" : "s"}: ${shown.join(", ")}`;
+}
+
 	pi.registerCommand("code-mode", {
 		description: "code_mode session mode: on | off | only | status",
 		handler: async (args, ctx) => {
@@ -105,7 +113,13 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 				mode.setOverride(decision.override);
 				if (decision.stopWorker) dispatch({ type: "stopRequested" });
 			}
-			ctx.ui.notify(decision.notify, decision.level);
+			let notify = decision.notify;
+			if (decision.reportReplState) {
+				const names = lastReplNames;
+				const state = names === undefined ? "no completed script yet" : names.length === 0 ? "0 bindings" : replStateSummary(names);
+				notify = `${notify}; REPL state: ${state}`;
+			}
+			ctx.ui.notify(notify, decision.level);
 		},
 	});
 

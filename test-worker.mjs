@@ -228,6 +228,22 @@ check(
 	check("exec2 after the fire-and-forget call gets its own tool answer", r2.ok === true && r2.value === "second", JSON.stringify(r2).slice(0, 200));
 }
 
+// REPL state names: the end message reports the worker's persisted top-level names.
+{
+	const first = await exec("const zeta = 26;");
+	check(
+		"end message carries sorted replNames including the new declaration",
+		first.ok && Array.isArray(first.replNames) && first.replNames.includes("zeta") && JSON.stringify(first.replNames) === JSON.stringify([...first.replNames].sort()),
+		JSON.stringify(first.replNames),
+	);
+	const second = await exec("const ypsilon = 25;");
+	check(
+		"replNames grows with the next declaration and keeps sorting",
+		second.ok && second.replNames.includes("ypsilon") && second.replNames.length === first.replNames.length + 1,
+		JSON.stringify(second.replNames),
+	);
+}
+
 // 18c. Permission-flags boot: the hardened spawn worker-host uses must still
 // reach ready — the worker needs no fs access beyond this repo.
 {

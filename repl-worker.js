@@ -233,7 +233,7 @@ async function runExec(msg) {
 			error = serializeError(e);
 		}
 	}
-	process.send({ type: "end", id: msg.id, ok, value: serializeValue(value), error, output: out });
+	process.send({ type: "end", id: msg.id, ok, value: serializeValue(value), error, output: out, replNames: [...persisted].sort() });
 	// A fire-and-forget tool call must not outlive its exec: its entry would
 	// resolve a promise nobody awaits and leak; the core drops the late answer.
 	pendingCalls.clear();
@@ -254,6 +254,7 @@ process.on("message", (msg) => {
 					ok: false,
 					error: { name: "SandboxError", message: `worker failed: ${e?.message ?? e}` },
 					output: out,
+					replNames: [...persisted].sort(),
 				});
 				out = [];
 			});

@@ -90,6 +90,7 @@ const endOutcome = (msg: Extract<WorkerOutMessage, { type: "end" }>): ExecOutcom
 	error: msg.error,
 	output: msg.output,
 	stateLost: false,
+	replNames: msg.replNames,
 });
 
 const workerStoppedOutcome = (journal: readonly ToolCallRecord[] = []): ExecOutcome =>

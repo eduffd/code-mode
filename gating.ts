@@ -118,12 +118,14 @@ export interface CommandDecision {
 	level: "info" | "warning" | "error";
 	override?: CodeMode;
 	stopWorker?: boolean;
+	/** status only: the adapter may append what it knows about the worker's REPL state. */
+	reportReplState?: true;
 }
 
 export const handleCommand = (args: string, current: ModeResolution): CommandDecision => {
 	const arg = args.trim().toLowerCase();
 	if (arg === "" || arg === "status") {
-		return { notify: `code_mode mode: ${current.mode} (${current.source})`, level: "info" };
+		return { notify: `code_mode mode: ${current.mode} (${current.source})`, level: "info", reportReplState: true };
 	}
 	if (arg === "on" || arg === "off" || arg === "only") {
 		return { notify: `code_mode mode: ${arg}`, level: "info", override: arg, stopWorker: arg === "off" };

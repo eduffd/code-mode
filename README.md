@@ -3,7 +3,7 @@
 Pi extension bringing Claude Code's [code-mode](https://code.claude.com/docs/en/code-mode) to Pi, with two capabilities the built-in `codemode` tool lacks:
 
 1. **Persistent REPL** — the `code_mode` tool runs the model's JavaScript in a long-lived worker whose `node:vm` context survives across calls. Top-level `const`/`let`/`var`/function/class declarations persist via `globalThis` capture. Redeclaring a persisted name throws `Identifier 'x' has already been declared — reassign without const instead`; assignment is the reassign channel.
-2. **Session-level tool gating** — `/code-mode only` hides direct tool declarations from the model for this session (they stay callable from scripts), steering all work through the REPL. `/code-mode on|off|only|status`; without an override the nested `codemode.mode` setting applies.
+2. **Session-level tool gating** — `/code-mode only` hides direct tool declarations from the model for this session (they stay callable from scripts), steering all work through the REPL. `/code-mode on|off|only|status`; without an override the nested `codemode.mode` setting applies. `status` also reports the worker's persisted REPL bindings by name.
 
 Session tools are callable as `await tools.<name>(args)`; `ALL_TOOLS`, `searchTools(query)`, `describeTool(name)`, `describeNamespace(name)` for discovery; `text(s)`, `image(data, mimeType)`, `exit(value)` output helpers; `console.*` is captured. Scripts run through full tool validation/permission hooks via `ctx.executeTool`.
 
@@ -33,7 +33,7 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `gating.ts` — mode owner: settings parse at one boundary (nested key accepted, flat keys warned), session override, loadout builders, the pure `/code-mode` decision
 - `format.ts` — result formatting: output budget (head-and-tail truncation with the honest `... [head-and-tail omitted N bytes] ...` marker, N the true omitted byte count), value/error sections, interrupted-run journal, the stateLost note
 - `repl-worker.js` — forked worker: persistent vm context, validating tool bridge over fork IPC, disconnect self-exit
-- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 41 checks)
+- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 43 checks)
 - `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 50 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 58 checks)
 - `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 23 checks)
@@ -60,7 +60,7 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 
 ```sh
 npm install                      # once, for acorn
-node test-worker.mjs             # 41 checks
+node test-worker.mjs             # 43 checks
 node test-compile.mjs            # 50 checks
 node test-lifecycle-core.mjs     # 58 checks
 node test-format.mjs             # 23 checks
