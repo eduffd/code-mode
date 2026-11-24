@@ -20,7 +20,8 @@
 //   Plain assignment (`x = 2`) is the reassignment channel.
 //
 // Loadable from plain Node type stripping (the worker imports "./compile.ts")
-// and from the tsc gate. Dependency-free besides acorn.
+// and compiles clean under the strict-tsc gate (tsconfig.json; ci.yml runs it,
+// scripts/check-structure.mjs keeps the gate honest). Dependency-free besides acorn.
 
 import { parse } from "acorn";
 

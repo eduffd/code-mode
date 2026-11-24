@@ -1,0 +1,9 @@
+what	why	evidence	result
+mined history (miner a0dbe304)	find mistake classes repeated by agents/humans	0 review comments on PRs 1-7; classes from commit messages: docs/skill drift (every PR), orphan SHA pointers (3x), lifecycle keying/pairing (PR1 wedge, PR3 timer, live toolAnswered bug), one-contract-many-places, untested-path warnings	classes logged; fixes sequenced into PRs
+proved live core bug via step() probe	repeat of PR1 keying class: toolAnswered keyed on handle only	journal of exec2 gains {bash ok} for a call exec1 made; stale toolResult sent to worker	confirmed pre-fix failure; fix = execId scoping (PR8)
+checker exists but CI-blocked	formal model must run in CI (operator mandate)	check-exec-lifecycle.mjs loads jiti from hard-coded /Users/edufd/.pi/.../1.5.2	path: add jiti devDep + ci.yml step (PR8)
+check-docs skips .claude/skills	docs drift class needs enforcement where drift is worst	scripts/check-docs.mjs has zero skills/ references	plan: extend check-docs (PR9)
+compile.ts names evidence/tsc.txt; file does not exist; no tsc anywhere	pointer-to-nothing class (3rd instance)	ls evidence/ empty; NO_LOCAL_TSC	plan: tsc --noEmit gate + evidence file (PR9)
+test-worker.mjs forks the REAL repl-worker.js	e2e already real; do not replace with stubs	test-worker.mjs line 1-7	keep; add late-answer e2e (PR8)
+comment-sicko spawned (a1d583e9)	/no-comments sweep of all source+docs	operator mandate	pending; act in PR10
+PR8 merged (d37dbd1)	late-tool-answer fix + checker in CI	checker's first CI run caught EPIPE crash (45394606792) + P3 end-vs-stop race (45395773133), both real, both fixed, CI green	merged

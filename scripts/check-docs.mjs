@@ -86,7 +86,9 @@ for (const step of [
 	"node test-compile.mjs",
 	"node test-lifecycle-core.mjs",
 	"node test-format.mjs",
+	"node .claude/skills/exec-lifecycle/check-exec-lifecycle.mjs",
 	"node scripts/check-docs.mjs",
+	"node scripts/check-structure.mjs",
 ]) {
 	if (!workflow.includes(step)) problem("workflow-steps", `ci.yml does not run \`${step}\``);
 }

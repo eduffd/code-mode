@@ -13,9 +13,11 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --no-audit --no-fund
+      - run: ./node_modules/.bin/tsc --noEmit
       - run: node test-worker.mjs
       - run: node test-compile.mjs
       - run: node test-lifecycle-core.mjs
       - run: node test-format.mjs
       - run: node .claude/skills/exec-lifecycle/check-exec-lifecycle.mjs
       - run: node scripts/check-docs.mjs
+      - run: node scripts/check-structure.mjs

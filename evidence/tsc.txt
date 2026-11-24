@@ -1,0 +1,13 @@
+strict-tsc gate — recorded run
+
+command: ./node_modules/.bin/tsc --noEmit   (tsconfig.json: strict, noUncheckedIndexedAccess, noEmit, allowImportingTsExtensions)
+exit: 0
+
+tsc version: Version 7.0.2
+node: v26.3.0
+
+Gate history: the gate's first run (2026-11-24) failed with 8 errors —
+index.ts imported sibling modules without extensions (jiti-only
+resolution) and lifecycle.ts drain() indexed queued[0] unsafely under
+noUncheckedIndexedAccess. Both fixed in PR9; CI runs the gate on every
+push (rule tsc-gate in scripts/check-docs.mjs keeps ci.yml honest).

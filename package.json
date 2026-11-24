@@ -16,6 +16,8 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "jiti": "^2.7.0"
+    "@types/node": "^26.6.6",
+    "jiti": "^2.7.0",
+    "typescript": "^7.0.2"
   }
 }
