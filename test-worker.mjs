@@ -5,7 +5,9 @@ import { isWorkerOutMessage } from "./protocol.ts";
 import { permissionArgv } from "./worker-host.ts";
 
 const workerPath = path.resolve("repl-worker.js");
-const proc = fork(workerPath, [], { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit", "ipc"] });
+// The host forks with serialization:"advanced" (snapshot payloads ride as Buffers);
+// this harness mirrors that so it sees the same messages the host sees.
+const proc = fork(workerPath, [], { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit", "ipc"], serialization: "advanced" });
 
 let seq = 0;
 const execWaiters = new Map();
@@ -226,6 +228,40 @@ check(
 	check("exec1 with a fire-and-forget tool call settles ok", r1.ok === true && r1.value === "2", JSON.stringify(r1).slice(0, 200));
 	const r2 = await exec("await tools.read({})", { read: "second" }, [{ name: "read", description: "Read" }]);
 	check("exec2 after the fire-and-forget call gets its own tool answer", r2.ok === true && r2.value === "second", JSON.stringify(r2).slice(0, 200));
+}
+
+// REPL snapshot/restore: state captured from one worker restores into a fresh one.
+{
+	const withState = await exec("const snapA = 41; const snapB = [1, 2]; function snapFn() { return 1; }");
+	const state = withState.state;
+	check(
+		"end message carries a snapshot payload",
+		withState.ok && state instanceof Uint8Array && state.length > 0,
+		`bytes=${state?.length}`,
+	);
+	const fresh = fork(workerPath, [], { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit", "ipc"], serialization: "advanced" });
+	await new Promise((resolve) => fresh.once("message", (m) => (m.type === "ready" ? resolve(true) : undefined)));
+	const freshEnd = (id) =>
+		new Promise((resolve) => {
+			const h = (m) => {
+				if (m.type === "end" && m.id === id) {
+					fresh.off("message", h);
+					resolve(m);
+				}
+			};
+			fresh.on("message", h);
+		});
+	fresh.send({ type: "exec", id: 1, code: "1", tools: [], restore: state });
+	const rmsg = await freshEnd(1);
+	check(
+		"restore exec reports restored bindings and the skipped function by name",
+		rmsg.stateRestored?.restored?.includes("snapA") && rmsg.stateRestored?.restored?.includes("snapB") && rmsg.stateRestored?.skipped?.includes("snapFn"),
+		JSON.stringify(rmsg.stateRestored),
+	);
+	fresh.send({ type: "exec", id: 2, code: "snapA + 1", tools: [] });
+	const r2 = await freshEnd(2);
+	check("restored values are live in the fresh worker", r2.ok && r2.value === "42", JSON.stringify(r2.value));
+	fresh.kill();
 }
 
 // REPL state names: the end message reports the worker's persisted top-level names.

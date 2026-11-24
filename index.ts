@@ -3,7 +3,7 @@
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildLoadout, createModeOwner, handleCommand, CODE_MODE_TOOL } from "./gating.ts";
-import { formatResultContent } from "./format.ts";
+import { boundNames, formatResultContent } from "./format.ts";
 import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol.ts";
 import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle.ts";
 import { createWorkerHost } from "./worker-host.ts";
@@ -101,8 +101,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 
 /** Display form of the worker's persisted REPL names; long lists stay bounded. */
 function replStateSummary(names: readonly string[]): string {
-	const shown = names.length > 12 ? [...names.slice(0, 12), `+${names.length - 12} more`] : [...names];
-	return `${names.length} binding${names.length === 1 ? "" : "s"}: ${shown.join(", ")}`;
+	return `${names.length} binding${names.length === 1 ? "" : "s"}: ${boundNames(names)}`;
 }
 
 	pi.registerCommand("code-mode", {
@@ -111,7 +110,10 @@ function replStateSummary(names: readonly string[]): string {
 			const decision = handleCommand(args, mode.resolve());
 			if (decision.override !== undefined) {
 				mode.setOverride(decision.override);
-				if (decision.stopWorker) dispatch({ type: "stopRequested" });
+				if (decision.stopWorker) {
+				host.discardSnapshot();
+				dispatch({ type: "stopRequested" });
+			}
 			}
 			let notify = decision.notify;
 			if (decision.reportReplState) {
@@ -123,7 +125,17 @@ function replStateSummary(names: readonly string[]): string {
 		},
 	});
 
-	pi.on("session_before_switch", () => dispatch({ type: "stopRequested" }));
-	pi.on("session_before_fork", () => dispatch({ type: "stopRequested" }));
-	pi.on("session_shutdown", () => dispatch({ type: "stopRequested" }));
+	// A deliberate stop means fresh REPL state; a crash or timeout keeps the snapshot.
+	pi.on("session_before_switch", () => {
+		host.discardSnapshot();
+		dispatch({ type: "stopRequested" });
+	});
+	pi.on("session_before_fork", () => {
+		host.discardSnapshot();
+		dispatch({ type: "stopRequested" });
+	});
+	pi.on("session_shutdown", () => {
+		host.discardSnapshot();
+		dispatch({ type: "stopRequested" });
+	});
 }

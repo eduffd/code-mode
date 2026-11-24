@@ -4,11 +4,65 @@
 // against that same context, so top-level bindings persist across execs.
 
 import vm from "node:vm";
+import v8 from "node:v8";
 import { format, inspect } from "node:util";
 import { isWorkerInMessage, toIdentifier } from "./protocol.ts";
 import { compileScript } from "./compile.ts";
 
 const EXIT = Symbol("code_mode.exit");
+
+// ---------------------------------------------------------------- snapshot/restore
+// REPL state survives a worker respawn or a Pi restart as a best-effort copy of
+// the sandbox's own properties, taken after every exec. Values the serializer
+// cannot clone (functions, classes) or that exceed the caps are skipped and
+// reported by name; the model is told exactly what came back.
+
+const INJECTED_NAMES = new Set(["console", "ALL_TOOLS", "searchTools", "describeTool", "describeNamespace", "tools", "text", "image", "exit"]);
+const MAX_VALUE_BYTES = 1 << 20;
+const MAX_SNAPSHOT_BYTES = 32 << 20;
+
+const buildSnapshot = () => {
+	const values = {};
+	const skipped = [];
+	const oversized = [];
+	let total = 0;
+	for (const name of Object.getOwnPropertyNames(sandbox)) {
+		if (INJECTED_NAMES.has(name)) continue;
+		let buf;
+		try {
+			buf = v8.serialize(sandbox[name]);
+		} catch {
+			skipped.push(name);
+			continue;
+		}
+		if (buf.length > MAX_VALUE_BYTES || total + buf.length > MAX_SNAPSHOT_BYTES) {
+			oversized.push(name);
+			continue;
+		}
+		values[name] = buf;
+		total += buf.length;
+	}
+	return { blob: v8.serialize({ values, skipped, oversized }), skipped, oversized };
+};
+
+const applyRestore = (payload) => {
+	let snap;
+	try {
+		snap = v8.deserialize(payload);
+	} catch {
+		return undefined; // corrupt or stale payload: restore nothing, report nothing
+	}
+	if (!snap || typeof snap !== "object") return undefined;
+	const restored = [];
+	for (const [name, buf] of Object.entries(snap.values ?? {})) {
+		try {
+			sandbox[name] = v8.deserialize(buf);
+			persisted.add(name);
+			restored.push(name);
+		} catch {}
+	}
+	return { restored: restored.sort(), skipped: snap.skipped ?? [], oversized: snap.oversized ?? [] };
+};
 
 // ---------------------------------------------------------------- state
 
@@ -210,6 +264,7 @@ async function runExec(msg) {
 	currentExecId = msg.id;
 	sandbox.console = makeConsole();
 	installTools(msg.tools ?? []);
+	const restoredReport = msg.restore ? applyRestore(msg.restore) : undefined;
 	let ok = true;
 	let value;
 	let error;
@@ -233,7 +288,18 @@ async function runExec(msg) {
 			error = serializeError(e);
 		}
 	}
-	process.send({ type: "end", id: msg.id, ok, value: serializeValue(value), error, output: out, replNames: [...persisted].sort() });
+	const snapshot = buildSnapshot();
+	process.send({
+		type: "end",
+		id: msg.id,
+		ok,
+		value: serializeValue(value),
+		error,
+		output: out,
+		replNames: [...persisted].sort(),
+		state: snapshot.blob,
+		stateRestored: restoredReport,
+	});
 	// A fire-and-forget tool call must not outlive its exec: its entry would
 	// resolve a promise nobody awaits and leak; the core drops the late answer.
 	pendingCalls.clear();
@@ -255,6 +321,7 @@ process.on("message", (msg) => {
 					error: { name: "SandboxError", message: `worker failed: ${e?.message ?? e}` },
 					output: out,
 					replNames: [...persisted].sort(),
+					stateRestored: restoredReport,
 				});
 				out = [];
 			});

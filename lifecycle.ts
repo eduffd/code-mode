@@ -91,6 +91,7 @@ const endOutcome = (msg: Extract<WorkerOutMessage, { type: "end" }>): ExecOutcom
 	output: msg.output,
 	stateLost: false,
 	replNames: msg.replNames,
+	stateRestored: msg.stateRestored,
 });
 
 const workerStoppedOutcome = (journal: readonly ToolCallRecord[] = []): ExecOutcome =>
@@ -110,7 +111,7 @@ const timeoutOutcome = (active: ActiveExec): ExecOutcome =>
 			ok: false,
 			error: {
 				name: "TimeoutError",
-				message: `script exceeded ${active.exec.timeoutMs} ms and the worker was killed; REPL state was lost — re-set any variables you still need`,
+				message: `script exceeded ${active.exec.timeoutMs} ms and the worker was killed; REPL state was lost — a best-effort snapshot restores on your next call`,
 			},
 			output: [],
 			stateLost: true,

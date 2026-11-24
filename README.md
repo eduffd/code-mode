@@ -33,10 +33,10 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `gating.ts` — mode owner: settings parse at one boundary (nested key accepted, flat keys warned), session override, loadout builders, the pure `/code-mode` decision
 - `format.ts` — result formatting: output budget (head-and-tail truncation with the honest `... [head-and-tail omitted N bytes] ...` marker, N the true omitted byte count), value/error sections, interrupted-run journal, the stateLost note
 - `repl-worker.js` — forked worker: persistent vm context, validating tool bridge over fork IPC, disconnect self-exit
-- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 43 checks)
+- `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 46 checks)
 - `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 50 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 58 checks)
-- `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 23 checks)
+- `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 26 checks)
 - `test-worker-host.mjs` — drives the real effect interpreter + core with a worker that dies pre-boot: bootFailed routing, never workerDied (`node test-worker-host.mjs`)
 - `test-worker-cleanup.mjs` — proves the cleanup script's safety contract on real processes (`node test-worker-cleanup.mjs`)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
@@ -50,7 +50,7 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 
 ## Limits
 
-- REPL state lives in the worker process: lost on Pi restart, session switch, script timeout (worker killed + respawned, model told explicitly), or crash.
+- REPL state survives a worker respawn (timeout or crash) and a Pi restart as a best-effort copy: the worker snapshots the sandbox after every exec (values the serializer cannot clone or that exceed the size caps are skipped and reported by name), and the first script a fresh worker runs is told exactly what came back. A deliberate stop (`/code-mode off`, session switch, fork, shutdown) is full state loss, as the model is told.
 - Scripts that compute without awaiting are stopped only by the timeout (default 120 s, per-call `timeout_ms`).
 - Output is truncated in memory at 20 000 characters (14 000 head + 5 000 tail) with the honest `... [head-and-tail omitted N bytes] ...` marker. No file is ever written anywhere in this path.
 - The `image()` helper captures an image item in the worker's output list; image items ride through to the result as image content blocks, each preceded by a label naming its index, mime type, and decoded byte size. The text output budget applies to text only.
@@ -60,10 +60,10 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 
 ```sh
 npm install                      # once, for acorn
-node test-worker.mjs             # 43 checks
+node test-worker.mjs             # 46 checks
 node test-compile.mjs            # 50 checks
 node test-lifecycle-core.mjs     # 58 checks
-node test-format.mjs             # 23 checks
+node test-format.mjs             # 26 checks
 node scripts/check-docs.mjs      # docs match the repository
 ```
 

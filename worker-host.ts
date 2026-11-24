@@ -8,15 +8,20 @@
 // stripping.
 
 import { fork, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { writeFileSync, unlinkSync } from "node:fs";
-import { isWorkerOutMessage, type WorkerInMessage } from "./protocol.ts";
+import { writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { isWorkerOutMessage, type WorkerInMessage, type WorkerOutMessage } from "./protocol.ts";
 import type { Effect, LifecycleEvent, SpawnFlags, WorkerHandle } from "./lifecycle.ts";
 
 const defaultWorkerPath = fileURLToPath(new URL("./repl-worker.js", import.meta.url));
 const packageDir = path.dirname(defaultWorkerPath);
 const pidFile = path.join(packageDir, ".code-mode-worker.pid");
+
+/** Per-project REPL state file: the last completed exec's snapshot, restored on respawn or restart. */
+const defaultStatePath = (): string =>
+	path.join(packageDir, `.code-mode-repl-${createHash("sha256").update(process.cwd()).digest("hex").slice(0, 12)}.state`);
 
 const BOOT_TIMEOUT_MS = 5_000;
 const STDERR_LINES = 20;
@@ -53,15 +58,42 @@ export interface WorkerHost {
 	/** Slot the active execute() context in; nested tool calls answer through it. */
 	setToolContext(ctx: ToolContextLike | undefined): void;
 	interpret(effect: Effect): void;
+	/** Drop the in-memory and on-disk REPL snapshot; a deliberate stop means fresh state. */
+	discardSnapshot(): void;
 }
 
-export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => void; workerPath?: string }): WorkerHost => {
+export const createWorkerHost = (opts: {
+	onEvent: (event: LifecycleEvent) => void;
+	workerPath?: string;
+	/** Override or disable (null) the per-project snapshot file; defaults to the computed path. */
+	statePath?: string | null;
+}): WorkerHost => {
 	const { onEvent } = opts;
 	const workerPath = opts.workerPath ?? defaultWorkerPath;
+	const statePath = opts.statePath === undefined ? defaultStatePath() : opts.statePath;
 	const children = new Map<WorkerHandle, ChildProcess>();
 	const bootTimers = new Map<WorkerHandle, NodeJS.Timeout>();
 	const timers = new Map<number, NodeJS.Timeout>();
 	let toolContext: ToolContextLike | undefined;
+
+	// ---- REPL snapshot: the last completed exec's serialized sandbox, restored
+	// onto the next worker (respawn after crash/timeout, or a Pi restart). A
+	// deliberate stop discards it; the adapter calls discardSnapshot for those.
+
+	let latestSnapshot: Buffer | null = null;
+	const restoredHandles = new Set<number>();
+	if (statePath) {
+		try {
+			const disk = readFileSync(statePath);
+			if (disk.length > 0) latestSnapshot = disk;
+		} catch {}
+	}
+	const writeStateFile = (blob: Buffer): void => {
+		if (!statePath) return;
+		try {
+			writeFileSync(statePath, blob);
+		} catch {}
+	};
 
 	// ---- pidfile: a best-effort breadcrumb (parent + child pid) for cleanup
 	// scoped to recorded pids instead of process names.
@@ -84,7 +116,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 	const interpretSpawn = (handle: WorkerHandle, flags: SpawnFlags): void => {
 		let proc: ChildProcess;
 		try {
-			proc = fork(workerPath, [], { cwd: packageDir, execArgv: flagsToArgv(flags), stdio: ["ignore", "ignore", "pipe", "ipc"] });
+			proc = fork(workerPath, [], { cwd: packageDir, execArgv: flagsToArgv(flags), stdio: ["ignore", "ignore", "pipe", "ipc"], serialization: "advanced" });
 		} catch (err) {
 			onEvent({ type: "bootFailed", handle, message: `code_mode worker failed to spawn: ${errorMessage(err)}` });
 			return;
@@ -118,7 +150,15 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 			bootTimers.delete(handle);
 			writePidFile(proc);
 			proc.on("message", (m: unknown) => {
-				if (isWorkerOutMessage(m)) onEvent({ type: "workerMessage", handle, message: m });
+				if (!isWorkerOutMessage(m)) return;
+				if (m.type === "end" && m.state !== undefined) {
+					latestSnapshot = Buffer.from(m.state);
+					writeStateFile(latestSnapshot);
+					const { state: _state, ...rest } = m;
+					onEvent({ type: "workerMessage", handle, message: rest as WorkerOutMessage });
+					return;
+				}
+				onEvent({ type: "workerMessage", handle, message: m });
 			});
 			proc.once("exit", () => {
 				children.delete(handle);
@@ -150,8 +190,15 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 	const interpretSend = (handle: WorkerHandle, message: WorkerInMessage): void => {
 		const proc = children.get(handle);
 		if (!proc) return;
+		let outgoing: WorkerInMessage = message;
+		// The first exec a fresh worker receives carries the snapshot to restore;
+		// its outcome reports what came back, so the model is never misled.
+		if (message.type === "exec" && !restoredHandles.has(handle.seq) && latestSnapshot) {
+			restoredHandles.add(handle.seq);
+			outgoing = { ...message, restore: latestSnapshot };
+		}
 		try {
-			proc.send(message);
+			proc.send(outgoing);
 		} catch {
 			// channel closing: the child's exit event settles whatever was pending
 		}
@@ -226,5 +273,13 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 			toolContext = ctx;
 		},
 		interpret,
+		discardSnapshot: () => {
+			latestSnapshot = null;
+			if (statePath) {
+				try {
+					unlinkSync(statePath);
+				} catch {}
+			}
+		},
 	};
 };

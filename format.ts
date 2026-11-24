@@ -34,6 +34,14 @@ export function formatResult(outcome: ExecOutcome, mode?: "on" | "off" | "only")
 		}
 	}
 	if (outcome.stateLost) sections.push("(REPL state was lost)");
+	const sr = outcome.stateRestored;
+	if (sr && (sr.restored.length > 0 || sr.skipped.length > 0 || sr.oversized.length > 0)) {
+		const parts: string[] = [];
+		if (sr.restored.length > 0) parts.push(`restored ${sr.restored.length} binding${sr.restored.length === 1 ? "" : "s"}: ${boundNames(sr.restored)}`);
+		const notRestorable = [...sr.skipped, ...sr.oversized];
+		if (notRestorable.length > 0) parts.push(`not restorable: ${boundNames(notRestorable)} (re-declare them)`);
+		sections.push(`(REPL state ${sr.restored.length > 0 ? "restored" : "was not restored"}: ${parts.join("; ")})`);
+	}
 	if (outcome.bootFailed && mode === "only") {
 		sections.push("The worker never booted; direct session tools remain callable by name (the code_mode tool description lists them).");
 	}
@@ -41,6 +49,10 @@ export function formatResult(outcome: ExecOutcome, mode?: "on" | "off" | "only")
 }
 
 type ResultBlock = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
+/** Bounded name list for model-facing text: at most 12 names, then a +N more tail. */
+export const boundNames = (names: readonly string[], max = 12): string =>
+	(names.length > max ? [...names.slice(0, max), `+${names.length - max} more`] : [...names]).join(", ");
 
 /** Every image item in a script's output, in script order, each preceded by a label text block. */
 function imageBlocks(output: OutputItem[]): ResultBlock[] {

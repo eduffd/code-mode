@@ -24,7 +24,7 @@ export interface WorkerError {
 
 /** Host -> worker messages. */
 export type WorkerInMessage =
-	| { type: "exec"; id: number; code: string; tools: ToolDecl[] }
+	| { type: "exec"; id: number; code: string; tools: ToolDecl[]; restore?: Uint8Array }
 	| { type: "toolResult"; callId: number; ok: boolean; value?: unknown; error?: string }
 	| { type: "ping" };
 
@@ -32,7 +32,14 @@ export type WorkerInMessage =
 export type WorkerOutMessage =
 	| { type: "ready" }
 	| { type: "toolCall"; execId: number; callId: number; name: string; args: unknown }
-	| { type: "end"; id: number; ok: boolean; value?: string; error?: WorkerError; output: OutputItem[]; replNames?: string[] };
+	| { type: "end"; id: number; ok: boolean; value?: string; error?: WorkerError; output: OutputItem[]; replNames?: string[]; state?: Uint8Array; stateRestored?: RestoreReport };
+
+/** What a restore-bearing exec reports about the state it re-applied. */
+export interface RestoreReport {
+	restored: string[];
+	skipped: string[];
+	oversized: string[];
+}
 
 /** One answered nested tool call, journaled per exec for interrupted-run reporting. */
 export interface ToolCallRecord {
@@ -54,6 +61,8 @@ export interface ExecOutcome {
 	bootFailed?: true;
 	/** Top-level names the worker's REPL currently persists, as reported by the last settled exec. */
 	replNames?: readonly string[];
+	/** On an exec that carried a restore payload: what was re-applied and what could not be. */
+	stateRestored?: RestoreReport;
 }
 
 /** Guard for the messages a worker may send to the host. */

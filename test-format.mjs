@@ -149,6 +149,22 @@ check("bootFailed + no mode: no guidance line", !r.includes("callable by name"),
 r = formatResult({ ok: false, error: { name: "TimeoutError", message: "late" }, output: [], stateLost: true }, "only");
 check("non-bootFailed failure + only: no guidance line", !r.includes("callable by name"), JSON.stringify(r));
 
+// Restore reporting: what came back, and what the model must re-declare.
+r = formatResult({ ok: true, output: [], stateRestored: { restored: ["alpha", "beta"], skipped: ["fn1"], oversized: [] } });
+check(
+	"stateRestored: restored bindings and non-restorable names in one line",
+	r === "(REPL state restored: restored 2 bindings: alpha, beta; not restorable: fn1 (re-declare them))",
+	JSON.stringify(r),
+);
+r = formatResult({ ok: true, output: [], stateRestored: { restored: [], skipped: ["fn1"], oversized: ["big"] } });
+check(
+	"stateRestored with nothing restored: honest not-restored line",
+	r === "(REPL state was not restored: not restorable: fn1, big (re-declare them))",
+	JSON.stringify(r),
+);
+r = formatResult({ ok: true, output: [], stateRestored: { restored: [], skipped: [], oversized: [] } });
+check("empty restore report: no line", !r.includes("REPL state"), JSON.stringify(r));
+
 const sources = ["format.ts", "index.ts", "gating.ts", "compile.ts", "protocol.ts", "lifecycle.ts", "worker-host.ts"]
 	.map((f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8"));
 const markerSites = sources.filter((s) => s.includes("head-and-tail omitted")).length;
