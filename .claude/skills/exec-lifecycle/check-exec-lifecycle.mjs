@@ -57,6 +57,10 @@ require_("node:child_process").fork = (...args) => {
 	const a = [...args];
 	if (fakeArmed) a[0] = FAKE_WORKER;
 	const p = realFork(...a);
+	// A send to a dead child's channel raises an async 'error' event (EPIPE),
+	// not a synchronous throw safeSend can catch; without this handler the
+	// harness crashes instead of recording the violation (CI, run 45394606792).
+	p.on("error", () => {});
 	allSpawned.add(p);
 	if (current) {
 		current.proc = p;

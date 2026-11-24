@@ -100,6 +100,10 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 			return;
 		}
 		children.set(handle, proc);
+		// A send to a dead child's channel raises an async 'error' event (EPIPE),
+		// not a synchronous throw interpretSend's catch could handle; swallow it —
+		// the exit path settles whatever the send was for.
+		proc.on("error", () => {});
 		const stderr: string[] = [];
 		proc.stderr?.on("data", (chunk: Buffer) => {
 			if (stderr.length < STDERR_LINES) stderr.push(chunk.toString());
