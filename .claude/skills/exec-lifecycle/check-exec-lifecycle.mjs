@@ -14,6 +14,8 @@
 //       no end, no worker stop       -> TimeoutError, stateLost:true
 //       worker stop settled the exec -> ok:false, stateLost:true
 //   P4 late-end hygiene — an end message for an already-settled exec is ignored
+//   P5 late-tool-answer — a tool answer for a finished exec journals nothing on
+//       the next exec and sends the worker nothing
 //
 // Exit 0 = all green. Exit 1 = any violation (new bug or modeling drift).
 // See SKILL.md for how to read results.
@@ -26,7 +28,6 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
-const PI_MODULES = "/Users/edufd/.pi/agent/install/releases/1.5.2/node_modules";
 const INDEX_TS = join(REPO, "index.ts");
 const FAKE_WORKER = join(HERE, "fake-worker.mjs");
 
@@ -103,7 +104,7 @@ function cleanupCurrent() {
 
 // ---------------------------------------------------------------- load real extension
 
-const { createJiti } = await import(join(PI_MODULES, "jiti/lib/jiti.mjs"));
+const { createJiti } = await import("jiti"); // devDependency; runs in CI and locally
 const stubPath = join(tmp, "typebox-stub.mjs");
 writeFileSync(
 	stubPath,
@@ -357,6 +358,48 @@ async function probeRealWorkerSigkill() {
 	};
 }
 
+// P5 — late-tool-answer: a tool answer that lands after its exec ended must
+// neither pollute the next exec's journal nor reach the worker. Replays the
+// live bug found 2026-11-24: toolAnswered was keyed on the handle alone, so
+// exec 2's timeout journal claimed a tool call exec 2 never made.
+async function probeLateToolAnswer() {
+	fakeArmed = true;
+	const ext = await loadFreshExtension();
+	const cur = newScenarioState();
+	let releaseAnswer;
+	const deferredCtx = {
+		tools: [{ name: "bash", description: "Bash" }],
+		executeTool: () =>
+			new Promise((res) => {
+				releaseAnswer = () => res({ result: { content: [{ type: "text", text: "late" }] }, isError: false });
+			}),
+	};
+	const p1 = ext.tool.execute("t1", { code: "tools.bash({});", timeout_ms: EXEC_TIMEOUT_MS }, undefined, undefined, deferredCtx);
+	await waitForExecSent();
+	safeSend(cur, { type: "__cm_toolCallThenEnd" });
+	await pump();
+	const r1 = await withDeadline(p1, DEADLINE_MS);
+	if (!r1.settled || !r1.result?.details?.ok) {
+		cleanupCurrent();
+		return { name: "late-tool-answer", pass: false, detail: "exec1 did not settle ok: " + outcomeShape(r1.settled ? r1.result : null) };
+	}
+	const p2 = ext.tool.execute("t2", { code: "next();", timeout_ms: EXEC_TIMEOUT_MS }, undefined, undefined, deferredCtx);
+	await waitForExecSent();
+	releaseAnswer();
+	await pump();
+	const r2 = await withDeadline(p2, DEADLINE_MS);
+	cleanupCurrent();
+	const txt = typeof r2.result?.content?.[0]?.text === "string" ? r2.result.content[0].text : "";
+	const polluted = /completed before interruption/.test(txt);
+	return {
+		name: "late-tool-answer",
+		pass: r2.settled && !polluted,
+		detail: polluted
+			? "exec2 journal claims a call exec2 never made: " + txt
+			: "exec2 settled, journal clean: " + outcomeShape(r2.settled ? r2.result : null),
+	};
+}
+
 // ---------------------------------------------------------------- main
 
 const pad = (s, n) => (s.length >= n ? s : s + " ".repeat(n - s.length));
@@ -396,7 +439,7 @@ if (shown > 121) console.log(`  ... (${results.length - shown} more passing scen
 
 console.log("");
 console.log("== probes ==");
-const probes = [await probeBootCrashRetry(), await probeOffWhenIdle(), await probeLateEndAfterTimeout(), await probeSessionSwitchMidExec()];
+const probes = [await probeBootCrashRetry(), await probeOffWhenIdle(), await probeLateEndAfterTimeout(), await probeSessionSwitchMidExec(), await probeLateToolAnswer()];
 if (process.argv.includes("--real")) probes.push(await probeRealWorkerSigkill());
 for (const pr of probes) {
 	console.log(`  ${pad(pr.name, 26)} ${pr.pass ? "PASS" : "FAIL"}  ${pr.detail}`);

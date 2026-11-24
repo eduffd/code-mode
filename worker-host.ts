@@ -181,7 +181,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		timers.delete(id);
 	};
 
-	const interpretAnswerTool = async (handle: WorkerHandle, callId: number, name: string, args: unknown): Promise<void> => {
+	const interpretAnswerTool = async (handle: WorkerHandle, execId: number, callId: number, name: string, args: unknown): Promise<void> => {
 		let answer: { ok: true; value?: unknown } | { ok: false; error?: string };
 		if (!toolContext) {
 			answer = { ok: false, error: "no active code_mode context" };
@@ -199,6 +199,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		onEvent({
 			type: "toolAnswered",
 			handle,
+			execId,
 			callId,
 			name,
 			ok: answer.ok,
@@ -220,7 +221,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 			case "clearTimer":
 				return interpretClearTimer(effect.id);
 			case "answerTool":
-				void interpretAnswerTool(effect.handle, effect.callId, effect.name, effect.args);
+				void interpretAnswerTool(effect.handle, effect.execId, effect.callId, effect.name, effect.args);
 				return;
 		}
 	};
