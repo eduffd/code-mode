@@ -147,6 +147,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		removePidFile();
 		// Detach listeners so the death of a killed worker raises no events.
 		proc.removeAllListeners();
+		proc.on("error", () => {}); // the strip removed the spawn-time guard; a late send to this channel must not crash the host
 		proc.kill();
 	};
 

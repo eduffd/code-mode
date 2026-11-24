@@ -169,6 +169,10 @@ function safeSend(cur, msg) {
 	// A closed channel means the worker is already gone: the event simply cannot
 	// be delivered (same as a message arriving after a real crash).
 	if (!cur.proc || !cur.proc.connected) return false;
+	// The extension's kill path strips all listeners (detach-before-kill), so
+	// the fork-time error handler may be gone; reattach before every send or a
+	// dead-channel EPIPE crashes the harness (CI run 45401531151).
+	if (cur.proc.listenerCount("error") === 0) cur.proc.on("error", () => {});
 	try {
 		cur.proc.send(msg);
 		return true;
