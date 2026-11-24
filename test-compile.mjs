@@ -9,6 +9,7 @@
 // the worker loop changed shape.
 
 import vm from "node:vm";
+import { readFileSync } from "node:fs";
 import { compileScript } from "./compile.ts";
 
 const results = [];
@@ -260,6 +261,21 @@ check("drift: block statement is not turned into a return", r.value === undefine
 
 r = await run("const obj = { m() { return 'method'; } }; obj.m()");
 check("drift: object literal with method shorthand", r.value === "method", JSON.stringify(r.value));
+
+// structural mirror: the worker's exec loop must keep the drift-loop shape —
+// compile -> vm.runInContext(breakOnSigint) -> capture landed names in finally.
+// If this fails, repl-worker.js changed shape and this suite no longer mirrors it.
+{
+	const workerSrc = readFileSync(new URL("./repl-worker.js", import.meta.url), "utf8");
+	const start = workerSrc.indexOf("async function runExec");
+	const end = workerSrc.indexOf('type: "end"', start);
+	const loop = workerSrc.slice(start, end);
+	check(
+		"mirror: worker exec loop keeps the drift-loop shape",
+		start !== -1 && end !== -1 && loop.includes("compileScript(") && loop.includes("vm.runInContext(") && loop.includes("breakOnSigint: true") && /finally\s*\{/.test(loop) && loop.includes("compiled.capturedNames"),
+		loop.slice(0, 120),
+	);
+}
 
 console.log(`\n${results.filter((x) => x.pass).length}/${results.length} passed`);
 process.exit(results.every((x) => x.pass) ? 0 : 1);

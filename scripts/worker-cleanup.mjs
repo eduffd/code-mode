@@ -50,10 +50,9 @@ try {
 const killed = [];
 const failed = [];
 for (const child of children) {
-	if (dryRun) {
-		killed.push(child);
-		continue;
-	}
+	// Dry-run kills nothing, so it reports nothing as killed — the output
+	// must not claim a kill that did not happen.
+	if (dryRun) continue;
 	try {
 		process.kill(child, "SIGKILL");
 		killed.push(child);

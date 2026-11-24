@@ -2,6 +2,7 @@
 import { fork } from "node:child_process";
 import path from "node:path";
 import { isWorkerOutMessage } from "./protocol.ts";
+import { permissionArgv } from "./worker-host.ts";
 
 const workerPath = path.resolve("repl-worker.js");
 const proc = fork(workerPath, [], { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit", "ipc"] });
@@ -207,6 +208,16 @@ check(
 	r.error?.message,
 );
 
+// 18a. Tool-name collision: when a raw name and an identifier map to the same
+// bridge slot, the raw name wins (resolveToolName checks toolByRaw first).
+{
+	const r1 = await exec("await tools.web_search({})", { web_search: "raw" }, [
+		{ name: "web.search", description: "Dotted alias" },
+		{ name: "web_search", description: "Raw" },
+	]);
+	check("collision: raw name wins over the identifier mapping", r1.ok === true && r1.value === "raw", JSON.stringify(r1).slice(0, 160));
+}
+
 // 18b. Late tool answer: exec 1 fires a tool call and ends without awaiting it
 // (fire-and-forget). The late answer must not pollute exec 2 or break its own
 // tool calls (P5; replays the journal-pollution bug at the protocol layer).
@@ -215,6 +226,28 @@ check(
 	check("exec1 with a fire-and-forget tool call settles ok", r1.ok === true && r1.value === "2", JSON.stringify(r1).slice(0, 200));
 	const r2 = await exec("await tools.read({})", { read: "second" }, [{ name: "read", description: "Read" }]);
 	check("exec2 after the fire-and-forget call gets its own tool answer", r2.ok === true && r2.value === "second", JSON.stringify(r2).slice(0, 200));
+}
+
+// 18c. Permission-flags boot: the hardened spawn worker-host uses must still
+// reach ready — the worker needs no fs access beyond this repo.
+{
+	const repoRoot = path.resolve(".");
+	const permProc = fork(workerPath, [], {
+		cwd: repoRoot,
+		execArgv: permissionArgv(path.dirname(workerPath)),
+		stdio: ["ignore", "ignore", "inherit", "ipc"],
+	});
+	const booted = await new Promise((resolve) => {
+		const t = setTimeout(() => resolve(false), 5000);
+		permProc.once("message", (m) => {
+			if (m && m.type === "ready") {
+				clearTimeout(t);
+				resolve(true);
+			}
+		});
+	});
+	permProc.kill();
+	check("worker boots under permission flags (no fs access beyond this repo)", booted, booted ? "" : "no ready handshake within 5s");
 }
 
 // 19. Disconnect self-exit: closing the channel ends the worker (no orphan);
