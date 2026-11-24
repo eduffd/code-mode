@@ -1,16 +1,5 @@
 // test-lifecycle-core.mjs — step-table tests for the pure lifecycle core.
 // Run from the repo root: node test-lifecycle-core.mjs
-//
-// Covers every state x event pair of lifecycle.ts:
-//   - totality: step returns { state, effects, settled } for every pair;
-//   - no-exec-vanishes: an open exec either stays open in the next state or
-//     appears in settled — exactly once, never both, never neither (the
-//     resolve-only settlement invariant that makes the wedge unwritable);
-//   - timer pairing: settling the active exec always emits clearTimer for it,
-//     activation always emits setTimer + send;
-//   - honest outcomes per transition (end / timeout / worker-stopped / boot
-//     failure), journal attachment, FIFO drain order, stale-handle drops;
-//   - no reject channel exists in the core's or adapter's code.
 
 import { readFileSync } from "node:fs";
 import { step } from "./lifecycle.ts";

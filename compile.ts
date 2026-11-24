@@ -6,19 +6,6 @@
 // semantics lands here once, and drift tests (test-compile.mjs) run against
 // this module without forking a worker.
 //
-// Semantics (one story):
-// - top-level `await` and `return` work (the IIFE provides them);
-// - the last top-level expression statement is returned, so completion values
-//   behave like a REPL (`1 + 1` yields 2);
-// - top-level declarations persist: each installs a live accessor on
-//   `globalThis` closed over the IIFE-local binding — var/let/function/class
-//   reads and writes via the bare name (any exec) or via `globalThis` see the
-//   current value; const keeps its frozen binding and mirrors reassignments
-//   through the accessor;
-// - redeclaring a name an earlier exec already captured throws the taught
-//   error ("... has already been declared — reassign without const instead").
-//   Plain assignment (`x = 2`) is the reassignment channel.
-//
 // Loadable from plain Node type stripping (the worker imports "./compile.ts")
 // and compiles clean under the strict-tsc gate (tsconfig.json; ci.yml runs it,
 // scripts/check-structure.mjs keeps the gate honest). Dependency-free besides acorn.
@@ -144,25 +131,19 @@ const isExpressionStatementNode = (v: unknown): v is ExpressionStatementNode =>
 
 // ---------------------------------------------------------------- public types
 
-/** One captured top-level declaration: the journal a snapshot/restore replays. */
 export interface DeclarationRecord {
 	readonly name: string;
 	readonly kind: "var" | "let" | "const" | "function" | "class";
-	/** Source text of the whole declaration statement. */
 	readonly source: string;
 }
 
 export interface CompiledScript {
-	/** The async-IIFE source — the single form every exec runs as. */
 	readonly source: string;
-	/** Names the rewrite captures onto globalThis (same set as `declarations`). */
 	readonly capturedNames: readonly string[];
-	/** Per-declaration journal: name, kind, source. */
 	readonly declarations: readonly DeclarationRecord[];
 }
 
 export interface CompileOptions {
-	/** Names earlier execs already captured; redeclaring any of them throws. */
 	readonly persistedNames?: ReadonlySet<string>;
 }
 
@@ -187,7 +168,6 @@ const patternNames = (node: unknown, acc: string[] = []): string[] => {
 	}
 	if (isAssignmentPatternNode(node)) return patternNames(node.left, acc);
 	if (isRestElementNode(node)) return patternNames(node.argument, acc);
-	// MemberExpression and anything else binds nothing.
 	return acc;
 };
 
@@ -210,18 +190,10 @@ const redeclareError = (name: string): SyntaxError =>
 
 // ---------------------------------------------------------------- compile
 
-/**
- * The one compile path: parse once with acorn, rewrite into an async IIFE
- * with globalThis capture. Throws acorn's SyntaxError for invalid code and a
- * SyntaxError with the taught message when a top-level declaration redeclares
- * a persisted name.
- */
 export const compileScript = (code: string, opts: CompileOptions = {}): CompiledScript => {
 	const parsed: unknown = parse(code, PARSE_OPTIONS);
 	if (!isProgramNode(parsed)) throw new Error("acorn returned a non-Program AST");
 	const statements = parsed.body;
-
-	// One record per statement, reused for both the redeclare check and the splice.
 	const perStatement = statements.map((stmt) => ({ stmt, records: declarationRecord(stmt, code) }));
 	const declarations = perStatement.flatMap((p) => p.records);
 	if (opts.persistedNames) {

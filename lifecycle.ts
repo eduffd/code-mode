@@ -1,24 +1,4 @@
 // lifecycle.ts — the pure exec-lifecycle core for code_mode.
-//
-// One total function: step(state, event) -> { state, effects, settled }.
-// It owns the whole worker lifecycle as a reviewable transition table:
-//
-//   idle ──execRequested──▶ booting{attempt,handle,queued} ──booted──▶ ready{handle}
-//   booting ──bootFailed──▶ booting{attempt:2} (plain-flag retry) or idle (settled)
-//   ready ──execRequested──▶ running{handle,active,queued} ──end──▶ ready / next queued
-//   running ──stopRequested│workerDied│timeoutFired──▶ idle, every open exec settled
-//
-// Load-bearing invariant: an accepted exec's future must settle exactly once.
-// Open execs live only on the holding states (booting, running); every
-// transition that leaves a holding state returns one settled outcome per open
-// exec — there is no other way to leave, and no state a dropped exec could
-// hide in. Exec futures are resolve-only: this module's types have no reject
-// channel and no promise, so the phantom-reject wedge class cannot be written.
-//
-// Pure: no node imports, no I/O, no time reads. All effects (spawn, send,
-// kill, timers, tool answering) are returned for worker-host.ts to interpret.
-// Worker identity is an opaque handle minted here; events carrying a stale
-// handle are dropped.
 
 import type { ExecOutcome, ToolCallRecord, ToolDecl, WorkerInMessage, WorkerOutMessage } from "./protocol.ts";
 
@@ -35,7 +15,6 @@ export interface AcceptedExec {
 	readonly timeoutMs: number;
 }
 
-/** The one exec in flight on a running worker, with its answered-tool-call journal. */
 export interface ActiveExec {
 	readonly exec: AcceptedExec;
 	readonly journal: readonly ToolCallRecord[];
@@ -280,7 +259,6 @@ const stepRunning = (state: RunningState, event: LifecycleEvent): StepResult => 
 			if (event.handle !== state.handle) return stay(state);
 			const msg = event.message;
 			if (msg.type === "end") {
-				// A late or unknown end is ignored (P4 hygiene); only the active exec's end settles.
 				if (msg.id !== state.active.exec.id) return stay(state);
 				const drained = drain(state.handle, state.queued);
 				return {
@@ -344,7 +322,6 @@ const stepRunning = (state: RunningState, event: LifecycleEvent): StepResult => 
 	}
 };
 
-/** The total transition table: every state x event pair has exactly one arm. */
 export const step = (state: LifecycleState, event: LifecycleEvent): StepResult => {
 	switch (state.kind) {
 		case "idle":

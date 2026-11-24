@@ -39,7 +39,6 @@ const contentText = (content: unknown): string =>
 				.join("\n")
 		: "";
 
-/** The slice of an ExtensionToolContext the tool bridge needs. */
 export interface ToolContextLike {
 	executeTool(name: string, args: unknown): Promise<{
 		isError?: boolean;
@@ -50,7 +49,6 @@ export interface ToolContextLike {
 export interface WorkerHost {
 	/** Slot the active execute() context in; nested tool calls answer through it. */
 	setToolContext(ctx: ToolContextLike | undefined): void;
-	/** Interpret one effect emitted by the lifecycle core. */
 	interpret(effect: Effect): void;
 }
 
@@ -63,22 +61,18 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 
 	// ---- pidfile: a best-effort breadcrumb (parent + child pid) for cleanup
 	// scoped to recorded pids instead of process names.
-	// scripts/worker-cleanup.mjs is the official consumer. Last boot wins.
+	// scripts/worker-cleanup.mjs is the official consumer.
 
 	const writePidFile = (proc: ChildProcess): void => {
 		try {
 			writeFileSync(pidFile, `${JSON.stringify({ parent: process.pid, child: proc.pid })}\n`);
-		} catch {
-			// the breadcrumb is optional
-		}
+		} catch {}
 	};
 
 	const removePidFile = (): void => {
 		try {
 			unlinkSync(pidFile);
-		} catch {
-			// already gone
-		}
+		} catch {}
 	};
 
 	const flagsToArgv = (flags: SpawnFlags): string[] =>
@@ -153,6 +147,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		removePidFile();
 		// Detach listeners so the death of a killed worker raises no events.
 		proc.removeAllListeners();
+		proc.on("error", () => {}); // the strip removed the spawn-time guard; a late send to this channel must not crash the host
 		proc.kill();
 	};
 

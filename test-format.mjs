@@ -1,6 +1,4 @@
-// Unit checks for format.ts: stateLost note exactly once, an honest
-// truncation marker whose byte count matches reality, and the empty-result
-// fallback. Runs on plain Node type stripping — no worker, no fork.
+// test-format.mjs — unit checks for format.ts.
 import { formatResult, truncateOutput } from "./format.ts";
 
 const results = [];
