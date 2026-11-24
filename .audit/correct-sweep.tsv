@@ -27,3 +27,4 @@ Each proven by planting the violation (break the behavior, watch the test fail, 
 - README "CI runs eight gates..." sentence kept: it names the gates in prose; workflow-steps rule asserts the steps themselves.
 - worker-cleanup usage line kept: CLI usage in a script header is user-facing doc, not a restating comment.
 - One-line module identity headers kept where reviewer deleted whole headers: repo-wide convention, zero-cost.
+PR10 merged	comment sweep + EPIPE guard made deterministic	CI caught the stripped-handler flake (45401531151); fixed on the PR	merged

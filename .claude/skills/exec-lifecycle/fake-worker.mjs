@@ -52,4 +52,11 @@ if (process.env.CM_FAKE_BOOT_CRASH === "1" && process.execArgv.includes("--permi
 	process.exit(1);
 }
 
+if (process.env.CM_EXIT_BEFORE_READY === "1") {
+	// Dies before the handshake: the host must route this to bootFailed (with
+	// its plain retry), never to workerDied — the exit->workerDied listener
+	// only exists after ready.
+	process.exit(7);
+}
+
 sendProtocol({ type: "ready" });

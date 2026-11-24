@@ -14,12 +14,15 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { isWorkerOutMessage, type WorkerInMessage } from "./protocol.ts";
 import type { Effect, LifecycleEvent, SpawnFlags, WorkerHandle } from "./lifecycle.ts";
 
-const workerPath = fileURLToPath(new URL("./repl-worker.js", import.meta.url));
-const packageDir = path.dirname(workerPath);
+const defaultWorkerPath = fileURLToPath(new URL("./repl-worker.js", import.meta.url));
+const packageDir = path.dirname(defaultWorkerPath);
 const pidFile = path.join(packageDir, ".code-mode-worker.pid");
 
 const BOOT_TIMEOUT_MS = 5_000;
 const STDERR_LINES = 20;
+
+/** The hardened spawn flags: no fs/cli access except the given directory (worker source + acorn live there). */
+export const permissionArgv = (dir: string): string[] => ["--permission", `--allow-fs-read=${dir}`];
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -52,8 +55,9 @@ export interface WorkerHost {
 	interpret(effect: Effect): void;
 }
 
-export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => void }): WorkerHost => {
+export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => void; workerPath?: string }): WorkerHost => {
 	const { onEvent } = opts;
+	const workerPath = opts.workerPath ?? defaultWorkerPath;
 	const children = new Map<WorkerHandle, ChildProcess>();
 	const bootTimers = new Map<WorkerHandle, NodeJS.Timeout>();
 	const timers = new Map<number, NodeJS.Timeout>();
@@ -75,15 +79,7 @@ export const createWorkerHost = (opts: { onEvent: (event: LifecycleEvent) => voi
 		} catch {}
 	};
 
-	const flagsToArgv = (flags: SpawnFlags): string[] =>
-		flags === "permission"
-			? [
-					"--permission",
-					// Best-effort hardening: the worker gets no fs/cli access except
-					// this package dir (worker source + acorn dependency live there).
-					`--allow-fs-read=${packageDir}`,
-				]
-			: [];
+	const flagsToArgv = (flags: SpawnFlags): string[] => (flags === "permission" ? permissionArgv(packageDir) : []);
 
 	const interpretSpawn = (handle: WorkerHandle, flags: SpawnFlags): void => {
 		let proc: ChildProcess;

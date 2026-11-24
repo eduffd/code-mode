@@ -18,6 +18,8 @@ jobs:
       - run: node test-compile.mjs
       - run: node test-lifecycle-core.mjs
       - run: node test-format.mjs
+      - run: node test-worker-host.mjs
+      - run: node test-worker-cleanup.mjs
       - run: node .claude/skills/exec-lifecycle/check-exec-lifecycle.mjs
       - run: node scripts/check-docs.mjs
       - run: node scripts/check-structure.mjs

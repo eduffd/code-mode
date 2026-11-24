@@ -252,6 +252,15 @@ for (const file of ["lifecycle.ts", "index.ts"]) {
 	check(`${file}: no reject channel in code (wedge class unwritable)`, !/\breject\b/.test(src), src.match(/.{0,40}\breject\b.{0,40}/)?.[0]);
 }
 
+// structural: lifecycle.ts is pure — no node imports, no time reads, no
+// process access. The property story (step is a total, deterministic table)
+// dies silently the moment one slips in.
+{
+	const src = stripComments(readFileSync(new URL("./lifecycle.ts", import.meta.url), "utf8"));
+	const offender = src.match(/from "node:[^"]+"|\bDate\.now\b|\bprocess\.|\brequire\(/)?.[0];
+	check("lifecycle.ts: pure (no node imports, no Date.now, no process, no require)", offender === undefined, offender);
+}
+
 const passed = results.filter((r) => r.pass).length;
 console.log(`${passed}/${results.length} passed`);
 process.exit(passed === results.length ? 0 : 1);

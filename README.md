@@ -37,11 +37,13 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 49 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 57 checks)
 - `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 14 checks)
+- `test-worker-host.mjs` — drives the real effect interpreter + core with a worker that dies pre-boot: bootFailed routing, never workerDied (`node test-worker-host.mjs`)
+- `test-worker-cleanup.mjs` — proves the cleanup script's safety contract on real processes (`node test-worker-cleanup.mjs`)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
 - `scripts/check-structure.mjs` — structural gates: one compile path, module boundaries (only `worker-host.ts` spawns; `protocol.ts` stays erasable), the tsc-gate wiring, skill-file integrity (`node scripts/check-structure.mjs`)
 - `tsconfig.json` — the strict-tsc gate config (`strict`, `noUncheckedIndexedAccess`); `evidence/tsc.txt` records the passing run
 - `scripts/worker-cleanup.mjs` — kills only the child pids of a given pid (`node scripts/worker-cleanup.mjs --pid <pid> [--dry-run]`); the consumer for the worker-host pidfile when a session died
-- `.github/workflows/ci.yml` — runs the eight gates on every push and pull request
+- `.github/workflows/ci.yml` — runs the ten gates on every push and pull request
 - `.pi/settings.json` — the workspace mode preference, in the nested shape
 
 ## Limits
@@ -63,4 +65,4 @@ node test-format.mjs             # 14 checks
 node scripts/check-docs.mjs      # docs match the repository
 ```
 
-CI (`.github/workflows/ci.yml`) runs eight gates on every push and pull request: the strict-tsc gate (`./node_modules/.bin/tsc --noEmit`), the four suites above, the lifecycle interleaving checker (`.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs`, 85 scenarios plus replay probes; jiti is a devDependency), and the two assertion gates `scripts/check-docs.mjs` + `scripts/check-structure.mjs`. `.claude/skills/verify/` holds the driver skill and feature recipes for proving user-facing behavior end to end.
+CI (`.github/workflows/ci.yml`) runs ten gates on every push and pull request: the strict-tsc gate (`./node_modules/.bin/tsc --noEmit`), the six suites above, the lifecycle interleaving checker (`.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs`, 85 scenarios plus replay probes; jiti is a devDependency), and the two assertion gates `scripts/check-docs.mjs` + `scripts/check-structure.mjs`. `.claude/skills/verify/` holds the driver skill and feature recipes for proving user-facing behavior end to end.
