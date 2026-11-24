@@ -31,6 +31,13 @@ process.on("message", (msg) => {
 		case "__cm_deliverEnd":
 			sendProtocol({ type: "end", id: lastExecId, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
 			break;
+		case "__cm_toolCallThenEnd":
+			// P5 replay: the exec makes a tool call, then ends without awaiting
+			// the answer. execId is ignored by pre-execId protocol guards and
+			// required once toolCall carries it, so this works across the fix.
+			sendProtocol({ type: "toolCall", execId: lastExecId, callId: 1, name: "bash", args: {} });
+			sendProtocol({ type: "end", id: lastExecId, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
+			break;
 		case "__cm_deliverEndId":
 			sendProtocol({ type: "end", id: msg.id, ok: true, value: JSON.stringify("ok"), output: [{ type: "text", text: "ran" }] });
 			break;

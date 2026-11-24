@@ -38,7 +38,7 @@ Each module owns one concern; the boundaries are load-bearing, not decorative:
 Two assets keep the property true rather than remembered:
 
 - `test-lifecycle-core.mjs` sweeps every state × event pair of `step()` (totality, no-exec-vanishes, timer pairing, honest outcomes, FIFO drain).
-- `.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs` interleaves the real adapter (loaded through jiti with a stubbed pi API) with real forked workers over 85 bounded scenarios, plus a `--real` probe that SIGKILLs an actual `repl-worker.js` mid-exec. It runs locally; it needs a local pi installation for jiti, so CI does not carry it.
+- `.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs` interleaves the real adapter (loaded through jiti with a stubbed pi API) with real forked workers over 85 bounded scenarios, plus replay probes — `--real` SIGKILLs an actual `repl-worker.js` mid-exec, `late-tool-answer` replays the journal-pollution bug. It runs in CI and locally; jiti is a devDependency, not a local pi path.
 
 `worker-host.ts` writes the pidfile breadcrumb for exactly one consumer: `scripts/worker-cleanup.mjs`, which kills only the child pids of a given pid and never matches by process name.
 
@@ -64,8 +64,8 @@ Every script, in the worker and in the drift tests, goes through the same `compi
 - REPL state lives in the worker: lost on Pi restart, session switch, timeout (worker killed and respawned), or crash. The model is told explicitly each time.
 - Only text output items are formatted today; `image()` items ride in the output list without a formatted section.
 - Deep imports of internal modules are blocked by the `exports` map; the entry still resolves.
-- The interleaving checker needs a local pi installation (jiti path), so it gates changes locally and at merge time, not in hosted CI.
+- The interleaving checker runs in CI (jiti is a devDependency), so it gates every push and pull request, not just local runs.
 
 ## 9. Gates
 
-CI runs five suites on every push and pull request: `test-worker.mjs` (37), `test-compile.mjs` (49), `test-lifecycle-core.mjs` (56), `test-format.mjs` (14), and `scripts/check-docs.mjs`. Locally, `.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs` adds the 85-scenario interleaving check, and `.claude/skills/verify/` holds the driver skill, feature recipes, and helpers for proving user-facing behavior end to end on a real session. `scripts/check-docs.mjs` keeps this document and the README assertable: named paths must be tracked, every shipped file must be listed, quoted literals must exist in the code, and the claims the rearchitecture killed must stay dead.
+CI runs six suites on every push and pull request: `test-worker.mjs` (39), `test-compile.mjs` (49), `test-lifecycle-core.mjs` (57), `test-format.mjs` (14), `scripts/check-docs.mjs`, and `.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs` (the 85-scenario interleaving check with replay probes). `.claude/skills/verify/` holds the driver skill, feature recipes, and helpers for proving user-facing behavior end to end on a real session. `scripts/check-docs.mjs` keeps this document and the README assertable: named paths must be tracked, every shipped file must be listed, quoted literals must exist in the code, and the claims the rearchitecture killed must stay dead.

@@ -56,16 +56,17 @@ const EVENTS = {
 	endUnknown: { type: "workerMessage", handle: h1, message: { type: "end", id: 99, ok: true, value: "7", output: [] } },
 	endStale: { type: "workerMessage", handle: h2, message: { type: "end", id: 1, ok: true, value: "7", output: [] } },
 	readyMessage: { type: "workerMessage", handle: h1, message: { type: "ready" } },
-	toolCall: { type: "workerMessage", handle: h1, message: { type: "toolCall", callId: 5, name: "bash", args: { cmd: "x" } } },
-	toolCallStale: { type: "workerMessage", handle: h2, message: { type: "toolCall", callId: 5, name: "bash", args: {} } },
+	toolCall: { type: "workerMessage", handle: h1, message: { type: "toolCall", execId: 1, callId: 5, name: "bash", args: { cmd: "x" } } },
+	toolCallStale: { type: "workerMessage", handle: h2, message: { type: "toolCall", execId: 1, callId: 5, name: "bash", args: {} } },
 	workerDied: { type: "workerDied", handle: h1 },
 	workerDiedStale: { type: "workerDied", handle: h2 },
 	stopRequested: { type: "stopRequested" },
 	timeoutFired: { type: "timeoutFired", id: 1 },
 	timeoutFiredUnknown: { type: "timeoutFired", id: 99 },
-	toolAnswered: { type: "toolAnswered", handle: h1, callId: 5, name: "bash", ok: true, value: "ok" },
-	toolAnsweredError: { type: "toolAnswered", handle: h1, callId: 6, name: "read", ok: false, error: "nope" },
-	toolAnsweredStale: { type: "toolAnswered", handle: h2, callId: 5, name: "bash", ok: true, value: "ok" },
+	toolAnswered: { type: "toolAnswered", handle: h1, execId: 1, callId: 5, name: "bash", ok: true, value: "ok" },
+	toolAnsweredError: { type: "toolAnswered", handle: h1, execId: 1, callId: 6, name: "read", ok: false, error: "nope" },
+	toolAnsweredStale: { type: "toolAnswered", handle: h2, execId: 1, callId: 5, name: "bash", ok: true, value: "ok" },
+	toolAnsweredOldExec: { type: "toolAnswered", handle: h1, execId: 99, callId: 5, name: "bash", ok: true, value: "ok" },
 };
 
 // ---------------------------------------------------------------- invariant sweep: every state x event pair
@@ -205,6 +206,12 @@ const effectTypes = (result) => result.effects.map((e) => e.type);
 	const r3err = step(running(), EVENTS.toolAnsweredError);
 	check("running + failed toolAnswered journals ok:false and sends the error", r3err.state.active.journal[0].ok === false && r3err.effects[0].message.ok === false && r3err.effects[0].message.error === "nope", JSON.stringify(r3err.effects[0].message));
 	check("running + stale-handle toolAnswered sends nothing", step(running(), EVENTS.toolAnsweredStale).effects.length === 0);
+	const rStale = step(running(), EVENTS.toolAnsweredOldExec);
+	check(
+		"running + toolAnswered for a finished exec is ignored entirely",
+		rStale.effects.length === 0 && rStale.settled.length === 0 && rStale.state.active.journal.length === 0,
+		JSON.stringify(rStale.state.active?.journal),
+	);
 
 	const r4 = step(running(), EVENTS.workerDied);
 	check("running + workerDied -> idle, active exec settles worker-stopped with journal, timer cleared", r4.state.kind === "idle" && same(outcomeNames(r4.settled), ["1:WorkerError"]) && same(effectTypes(r4), ["clearTimer"]), JSON.stringify(r4));

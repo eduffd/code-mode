@@ -40,7 +40,7 @@ export type WorkerInMessage =
 /** Worker -> host messages. */
 export type WorkerOutMessage =
 	| { type: "ready" }
-	| { type: "toolCall"; callId: number; name: string; args: unknown }
+	| { type: "toolCall"; execId: number; callId: number; name: string; args: unknown }
 	| { type: "end"; id: number; ok: boolean; value?: string; error?: WorkerError; output: OutputItem[] };
 
 /** One answered nested tool call, journaled per exec for interrupted-run reporting. */
@@ -67,8 +67,10 @@ export const isWorkerOutMessage = (m: unknown): m is WorkerOutMessage => {
 	const t = (m as { type?: unknown }).type;
 	if (t === "ready") return true;
 	if (t === "toolCall") {
-		const x = m as { callId?: unknown; name?: unknown };
-		return typeof x.callId === "number" && typeof x.name === "string";
+		// execId is mandatory: the core routes a tool answer by the exec that
+		// made the call, so a toolCall without one is unroutable, not optional.
+		const x = m as { execId?: unknown; callId?: unknown; name?: unknown };
+		return typeof x.execId === "number" && typeof x.callId === "number" && typeof x.name === "string";
 	}
 	if (t === "end") {
 		const x = m as { id?: unknown; ok?: unknown; output?: unknown };

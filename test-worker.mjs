@@ -207,6 +207,16 @@ check(
 	r.error?.message,
 );
 
+// 18b. Late tool answer: exec 1 fires a tool call and ends without awaiting it
+// (fire-and-forget). The late answer must not pollute exec 2 or break its own
+// tool calls (P5; replays the journal-pollution bug at the protocol layer).
+{
+	const r1 = await exec("tools.bash({}); 1 + 1", { bash: "late" }, [{ name: "bash", description: "Bash" }]);
+	check("exec1 with a fire-and-forget tool call settles ok", r1.ok === true && r1.value === "2", JSON.stringify(r1).slice(0, 200));
+	const r2 = await exec("await tools.read({})", { read: "second" }, [{ name: "read", description: "Read" }]);
+	check("exec2 after the fire-and-forget call gets its own tool answer", r2.ok === true && r2.value === "second", JSON.stringify(r2).slice(0, 200));
+}
+
 // 19. Disconnect self-exit: closing the channel ends the worker (no orphan);
 // fallback kills the recorded pid only.
 const childPid = proc.pid;

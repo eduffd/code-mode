@@ -72,7 +72,7 @@ export type Effect =
 	| { readonly type: "kill"; readonly handle: WorkerHandle }
 	| { readonly type: "setTimer"; readonly id: number; readonly durationMs: number }
 	| { readonly type: "clearTimer"; readonly id: number }
-	| { readonly type: "answerTool"; readonly handle: WorkerHandle; readonly callId: number; readonly name: string; readonly args: unknown };
+	| { readonly type: "answerTool"; readonly handle: WorkerHandle; readonly execId: number; readonly callId: number; readonly name: string; readonly args: unknown };
 
 /** One exec settled by a transition; the adapter resolves its caller future with the outcome. */
 export interface SettledExec {
@@ -95,7 +95,7 @@ export type LifecycleEvent =
 	/** The one stop event: /code-mode off, session switch/fork/shutdown, or a boot-time stop. */
 	| { readonly type: "stopRequested" }
 	| { readonly type: "timeoutFired"; readonly id: number }
-	| { readonly type: "toolAnswered"; readonly handle: WorkerHandle; readonly callId: number; readonly name: string; readonly ok: boolean; readonly value?: unknown; readonly error?: string };
+	| { readonly type: "toolAnswered"; readonly handle: WorkerHandle; readonly execId: number; readonly callId: number; readonly name: string; readonly ok: boolean; readonly value?: unknown; readonly error?: string };
 
 const WORKER_STOPPED_MESSAGE = "code_mode worker stopped; REPL state was lost";
 const BOOT_EXIT_MESSAGE = "code_mode worker exited during boot";
@@ -292,7 +292,7 @@ const stepRunning = (state: RunningState, event: LifecycleEvent): StepResult => 
 			if (msg.type === "toolCall") {
 				return {
 					state,
-					effects: [{ type: "answerTool", handle: state.handle, callId: msg.callId, name: msg.name, args: msg.args }],
+					effects: [{ type: "answerTool", handle: state.handle, execId: msg.execId, callId: msg.callId, name: msg.name, args: msg.args }],
 					settled: [],
 				};
 			}
@@ -300,6 +300,10 @@ const stepRunning = (state: RunningState, event: LifecycleEvent): StepResult => 
 		}
 		case "toolAnswered": {
 			if (event.handle !== state.handle) return stay(state);
+			// Keyed on the exec, not just the handle: one worker serves many execs,
+			// so an answer for a finished exec must not journal on the next one or
+			// reach the worker (P5; the guard end and timeoutFired already have).
+			if (event.execId !== state.active.exec.id) return stay(state);
 			const active: ActiveExec = {
 				...state.active,
 				journal: [...state.active.journal, { name: event.name, ok: event.ok }],

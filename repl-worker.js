@@ -20,6 +20,7 @@ const ctx = vm.createContext(sandbox);
 let out = []; // output items for the running exec
 let callSeq = 0;
 const pendingCalls = new Map(); // callId -> { resolve, reject }
+let currentExecId = null; // the exec whose tool calls are in flight; null between execs
 const persisted = new Set(); // top-level names earlier execs captured to globalThis
 
 // ---------------------------------------------------------------- output helpers
@@ -172,7 +173,7 @@ function callTool(name, args) {
 	const callId = ++callSeq;
 	return new Promise((resolve, reject) => {
 		pendingCalls.set(callId, { resolve, reject });
-		process.send({ type: "toolCall", callId, name, args: args ?? {} });
+		process.send({ type: "toolCall", execId: currentExecId, callId, name, args: args ?? {} });
 	});
 }
 
@@ -212,6 +213,7 @@ function serializeError(e) {
 
 async function runExec(msg) {
 	out = [];
+	currentExecId = msg.id;
 	sandbox.console = makeConsole();
 	installTools(msg.tools ?? []);
 	let ok = true;
@@ -240,6 +242,10 @@ async function runExec(msg) {
 		}
 	}
 	process.send({ type: "end", id: msg.id, ok, value: serializeValue(value), error, output: out });
+	// A fire-and-forget tool call must not outlive its exec: its entry would
+	// resolve a promise nobody awaits and leak; the core drops the late answer.
+	pendingCalls.clear();
+	currentExecId = null;
 	out = [];
 }
 
