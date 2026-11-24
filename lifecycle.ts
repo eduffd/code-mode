@@ -122,6 +122,7 @@ const bootFailedOutcome = (message: string): ExecOutcome => ({
 	error: { name: "SandboxError", message },
 	output: [],
 	stateLost: true,
+	bootFailed: true,
 });
 
 const IDLE: LifecycleState = { kind: "idle" };

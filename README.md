@@ -36,7 +36,7 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `test-worker.mjs` — standalone protocol harness (`node test-worker.mjs`, 41 checks)
 - `test-compile.mjs` — compile drift tests against compile.ts in-process (`node test-compile.mjs`, 50 checks)
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 58 checks)
-- `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 19 checks)
+- `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 23 checks)
 - `test-worker-host.mjs` — drives the real effect interpreter + core with a worker that dies pre-boot: bootFailed routing, never workerDied (`node test-worker-host.mjs`)
 - `test-worker-cleanup.mjs` — proves the cleanup script's safety contract on real processes (`node test-worker-cleanup.mjs`)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
@@ -63,7 +63,7 @@ npm install                      # once, for acorn
 node test-worker.mjs             # 41 checks
 node test-compile.mjs            # 50 checks
 node test-lifecycle-core.mjs     # 58 checks
-node test-format.mjs             # 19 checks
+node test-format.mjs             # 23 checks
 node scripts/check-docs.mjs      # docs match the repository
 ```
 

@@ -18,7 +18,7 @@ export function truncateOutput(items: OutputItem[]): string {
 }
 
 /** The full result text for one settled exec. */
-export function formatResult(outcome: ExecOutcome): string {
+export function formatResult(outcome: ExecOutcome, mode?: "on" | "off" | "only"): string {
 	const sections: string[] = [];
 	const text = truncateOutput(outcome.output);
 	if (text.length > 0) sections.push(text);
@@ -34,6 +34,9 @@ export function formatResult(outcome: ExecOutcome): string {
 		}
 	}
 	if (outcome.stateLost) sections.push("(REPL state was lost)");
+	if (outcome.bootFailed && mode === "only") {
+		sections.push("The worker never booted; direct session tools remain callable by name (the code_mode tool description lists them).");
+	}
 	return sections.join("\n") || "(no output; script returned undefined)";
 }
 
@@ -52,6 +55,6 @@ function imageBlocks(output: OutputItem[]): ResultBlock[] {
 }
 
 /** The full result content for one settled exec: the text section, then image blocks. */
-export function formatResultContent(outcome: ExecOutcome): ResultBlock[] {
-	return [{ type: "text", text: formatResult(outcome) }, ...imageBlocks(outcome.output)];
+export function formatResultContent(outcome: ExecOutcome, mode?: "on" | "off" | "only"): ResultBlock[] {
+	return [{ type: "text", text: formatResult(outcome, mode) }, ...imageBlocks(outcome.output)];
 }

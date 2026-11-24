@@ -1,5 +1,6 @@
 // test-format.mjs — unit checks for format.ts.
-import { formatResult, truncateOutput } from "./format.ts";
+import { formatResult, formatResultContent, truncateOutput } from "./format.ts";
+import { readFileSync } from "node:fs";
 
 const results = [];
 function check(name, cond, detail = "") {
@@ -92,8 +93,6 @@ check(
 r = truncateOutput([item("z".repeat(20_000))]);
 check("at-budget output is not truncated", !r.includes("..."), `len ${r.length}`);
 
-import { formatResultContent } from "./format.ts";
-
 // Image output items ride through as labeled image blocks after the text section.
 let c = formatResultContent({ ok: true, value: "made", output: [item("done")] });
 check(
@@ -135,7 +134,21 @@ check(
 	`blocks=${c.length} imageAt=${c.findIndex((b) => b.type === "image")}`,
 );
 
-import { readFileSync } from "node:fs";
+// Boot failure in only mode: the result tells the model direct tools remain callable.
+const bootFailed = { ok: false, error: { name: "SandboxError", message: "code_mode worker exited during boot" }, output: [], stateLost: true, bootFailed: true };
+r = formatResult(bootFailed, "only");
+check(
+	"bootFailed + only: guidance line after the stateLost note",
+	r.endsWith("(REPL state was lost)\nThe worker never booted; direct session tools remain callable by name (the code_mode tool description lists them)."),
+	JSON.stringify(r),
+);
+r = formatResult(bootFailed, "on");
+check("bootFailed + on: no guidance line", !r.includes("callable by name"), JSON.stringify(r));
+r = formatResult(bootFailed);
+check("bootFailed + no mode: no guidance line", !r.includes("callable by name"), JSON.stringify(r));
+r = formatResult({ ok: false, error: { name: "TimeoutError", message: "late" }, output: [], stateLost: true }, "only");
+check("non-bootFailed failure + only: no guidance line", !r.includes("callable by name"), JSON.stringify(r));
+
 const sources = ["format.ts", "index.ts", "gating.ts", "compile.ts", "protocol.ts", "lifecycle.ts", "worker-host.ts"]
 	.map((f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8"));
 const markerSites = sources.filter((s) => s.includes("head-and-tail omitted")).length;

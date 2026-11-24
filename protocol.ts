@@ -50,6 +50,8 @@ export interface ExecOutcome {
 	stateLost: boolean;
 	/** Tool calls answered before the run was interrupted; on worker-stopped/timeout outcomes when any landed. */
 	journal?: readonly ToolCallRecord[];
+	/** True only on boot-failed outcomes: the worker never ran this script. */
+	bootFailed?: true;
 }
 
 /** Guard for the messages a worker may send to the host. */

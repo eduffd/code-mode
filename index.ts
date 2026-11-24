@@ -87,7 +87,7 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			);
 			host.setToolContext(undefined);
 			return {
-				content: formatResultContent(outcome),
+				content: formatResultContent(outcome, mode.resolve().mode),
 				details: { ok: outcome.ok, stateLost: outcome.stateLost },
 				isError: !outcome.ok,
 			};
