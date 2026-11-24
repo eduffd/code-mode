@@ -187,7 +187,7 @@ check(
 	JSON.stringify(r.output),
 );
 
-// 18. Live capture regression (acceptance finding).
+// 18. Live capture regression.
 r = await exec("var acc = 1; function tick() { acc += 1; return acc; } tick()");
 check("live-capture: var+function mutation returns the updated value", r.ok && r.value === "2", JSON.stringify(r.value));
 r = await exec("acc");

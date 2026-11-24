@@ -1,15 +1,6 @@
-// protocol.ts — the fork-IPC contract between index.ts (host) and
-// repl-worker.js. Single source for every message shape, guard, and discovery
-// name that crosses the fork; consumers import from here instead of
-// re-encoding the shapes.
-//
-// Loadable from both sides of the fork:
-// - the host imports it through jiti (extensionless `./protocol`);
-// - the worker and the .mjs drivers import it directly under Node's type
-//   stripping with an explicit `./protocol.ts` specifier.
-//
-// So: keep this file free of imports and of non-erasable TypeScript (no
-// enums, no namespaces) — type stripping must be able to load it from plain
+// protocol.ts — the fork-IPC contract between index.ts (host) and repl-worker.js.
+// Keep this file free of imports and of non-erasable TypeScript (no enums,
+// no namespaces) — type stripping must be able to load it from plain
 // JavaScript.
 
 /** One captured output item of a finished script. */
@@ -109,7 +100,6 @@ export const toIdentifier = (name: string): string => name.replace(/[^A-Za-z0-9_
  */
 export const DISCOVERY_TOOL_NAMES = ["ALL_TOOLS", "searchTools", "describeTool", "describeNamespace"] as const;
 
-/** Host-side regex matching any discovery global in user code. */
 export const DISCOVERY_GLOBALS = new RegExp(`\\b(${DISCOVERY_TOOL_NAMES.join("|")})\\b`);
 
 const DISCOVERY_SIGNATURES: Record<(typeof DISCOVERY_TOOL_NAMES)[number], string> = {
@@ -119,5 +109,4 @@ const DISCOVERY_SIGNATURES: Record<(typeof DISCOVERY_TOOL_NAMES)[number], string
 	describeNamespace: "describeNamespace(name)",
 };
 
-/** "`ALL_TOOLS`, `searchTools(query)`, ..." — the discovery line in tool descriptions. */
 export const DISCOVERY_LISTING = DISCOVERY_TOOL_NAMES.map((n) => `\`${DISCOVERY_SIGNATURES[n]}\``).join(", ");

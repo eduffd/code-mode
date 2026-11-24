@@ -7,3 +7,23 @@ compile.ts names evidence/tsc.txt; file does not exist; no tsc anywhere	pointer-
 test-worker.mjs forks the REAL repl-worker.js	e2e already real; do not replace with stubs	test-worker.mjs line 1-7	keep; add late-answer e2e (PR8)
 comment-sicko spawned (a1d583e9)	/no-comments sweep of all source+docs	operator mandate	pending; act in PR10
 PR8 merged (d37dbd1)	late-tool-answer fix + checker in CI	checker's first CI run caught EPIPE crash (45394606792) + P3 end-vs-stop race (45395773133), both real, both fixed, CI green	merged
+PR9 merged	gates for self-claims	tsc first run: 8 real errors fixed; 5 structure rules planted and each caught its violation	merged
+
+## PR11 plan (behavioral encodings — replace prose with runnable checks)
+1. lifecycle purity: structural check in test-lifecycle-core.mjs (no node: imports, no Date.now/process. in lifecycle.ts) [finding 15]
+2. pre-boot death -> bootFailed, never workerDied: new test-worker-host.mjs driving createWorkerHost + fake-worker CM_EXIT_BEFORE_READY; add the control to fake-worker.mjs [finding 16]
+3. tool-name collision precedence (raw wins): test-worker.mjs case distinguishing declarations by paramWarnings schema [finding 21]
+4. worker-cleanup safety: new test-worker-cleanup.mjs (decoy parent/child; wrong --pid costs nothing; --dry-run) + CI step [finding 24]
+5. compile-loop mirror: structural check in test-compile.mjs that repl-worker runExec still matches the drift-loop shape [finding 26]
+6. permission-flags boot: test-worker.mjs forks repl-worker with --permission + --allow-fs-read=cwd, ready within 5s [finding 28]
+Each proven by planting the violation (break the behavior, watch the test fail, restore).
+
+## PR12 plan (counts + rules table)
+1. check-counts rule in check-docs.mjs: run the 4 suites, parse "N/N passed", compare against README/DESIGN [finding 3]
+2. AGENTS.md: rule -> enforcement table (correct skill step 4)
+3. docs counts sync
+
+## Deviations from reviewer (logged)
+- README "CI runs eight gates..." sentence kept: it names the gates in prose; workflow-steps rule asserts the steps themselves.
+- worker-cleanup usage line kept: CLI usage in a script header is user-facing doc, not a restating comment.
+- One-line module identity headers kept where reviewer deleted whole headers: repo-wide convention, zero-cost.

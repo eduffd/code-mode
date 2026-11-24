@@ -1,24 +1,11 @@
 // gating.ts — the one owner of code_mode session mode.
-//
-// Settings are external data and are parsed here, at one boundary: the nested
-// `codemode.mode` key is the accepted shape; the two observed flat spellings
-// ("codemode.mode", "code-mode.mode") produce a loud warning naming the
-// nested shape instead of a silent no-op. The mode owner holds the session
-// override; buildLoadout turns the resolved mode into what pi renders;
-// handleCommand is the pure decision for /code-mode (the adapter applies its
-// side effects, so /code-mode off still stops the worker there).
-//
-// Loaded through jiti from index.ts; the explicit "./protocol.ts" specifier
-// also keeps it loadable from plain Node type stripping.
 
 import { DISCOVERY_LISTING, toIdentifier } from "./protocol.ts";
 
-/** The tool the modes steer through. */
 export const CODE_MODE_TOOL = "code_mode";
 
 export type CodeMode = "on" | "off" | "only";
 
-/** How the effective mode was decided — what /code-mode status reports. */
 export interface ModeResolution {
 	readonly mode: CodeMode;
 	readonly source: string;
@@ -31,11 +18,6 @@ const MODES: readonly CodeMode[] = ["on", "off", "only"];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
-/**
- * The one settings boundary for the mode: nested `codemode.mode` wins; a flat
- * dotted key is ignored loudly (mode falls back to "on") with a warning that
- * names the nested shape. Any other value falls back to "on", as before.
- */
 export const parseModeSetting = (settings: unknown): ModeResolution => {
 	const record = isRecord(settings) ? settings : {};
 	for (const key of FLAT_MODE_KEYS) {
@@ -57,14 +39,12 @@ export const parseModeSetting = (settings: unknown): ModeResolution => {
 	};
 };
 
-/** Effective mode: the session override wins, else the parsed settings. */
 export const resolveMode = (override: CodeMode | null, settings: unknown): ModeResolution => {
 	const parsed = parseModeSetting(settings);
 	if (override !== null) return { mode: override, source: "session override", warning: parsed.warning };
 	return parsed;
 };
 
-/** Holds the session-scoped override. */
 export interface ModeOwner {
 	resolve(): ModeResolution;
 	/** null clears the override: follow settings again. */
@@ -83,7 +63,6 @@ export const createModeOwner = (getSettings: () => unknown): ModeOwner => {
 
 // ---------------------------------------------------------------- loadout builders
 
-/** The slice of a session loadout the mode logic reads. */
 export interface SessionLoadout {
 	declared: readonly { name: string; description: string }[];
 	callable: readonly { name: string; description: string }[];
@@ -110,8 +89,6 @@ export const buildLoadout = (mode: CodeMode, loadout: SessionLoadout): LoadoutCh
 		return { descriptions };
 	}
 
-	// "only": hide direct declarations (they stay active and callable from scripts)
-	// and list every callable tool in the code_mode description.
 	const hiddenDeclarations = loadout.declared
 		.filter((t) => t.name !== CODE_MODE_TOOL && callableNames.has(t.name))
 		.map((t) => t.name);
@@ -136,17 +113,13 @@ export const buildLoadout = (mode: CodeMode, loadout: SessionLoadout): LoadoutCh
 
 // ---------------------------------------------------------------- /code-mode decision
 
-/** What the adapter must do for one /code-mode invocation. */
 export interface CommandDecision {
 	notify: string;
 	level: "info" | "warning" | "error";
-	/** When set, the adapter applies it as the session override. */
 	override?: CodeMode;
-	/** When true, the adapter stops the worker (mode went off). */
 	stopWorker?: boolean;
 }
 
-/** Pure decision for /code-mode on | off | only | status; the adapter side-effects it. */
 export const handleCommand = (args: string, current: ModeResolution): CommandDecision => {
 	const arg = args.trim().toLowerCase();
 	if (arg === "" || arg === "status") {

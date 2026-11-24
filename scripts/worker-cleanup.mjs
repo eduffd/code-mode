@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // worker-cleanup.mjs — kill the code_mode workers a crashed session left behind.
 //
-// The pidfile (`.code-mode-worker.pid`, written by worker-host.ts) records the
-// session pid and its worker pid.
-//
 // Usage: node scripts/worker-cleanup.mjs --pid <pid> [--dry-run]
 //
 // Scoped kill only: the target's children (pgrep -P <pid>) are the entire

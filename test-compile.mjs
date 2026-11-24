@@ -75,8 +75,6 @@ check("drift: destructured bindings persist", r.value === 36, JSON.stringify(r.v
 r = await run("const { 'a-b': ab } = { 'a-b': 5 }; ab");
 check("drift: destructuring rename binds the identifier", sandbox.ab === 5, JSON.stringify(sandbox.ab));
 
-// ---- declaration journal (snapshot/restore material)
-
 r = await run("let journaled = 7; const { j2 } = { j2: 8 };");
 const journal = r.compiled.declarations;
 check(

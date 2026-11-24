@@ -1,9 +1,7 @@
 // repl-worker.js — long-lived REPL worker for the code-mode Pi extension.
 //
-// Spawned via child_process.fork. Holds ONE node:vm context for the worker's
-// whole life; every script runs against that same context, so top-level
-// bindings (var/function via globalThis, let/const/class via the realm's
-// shared global lexical scope) persist across execs.
+// Holds ONE node:vm context for the worker's whole life; every script runs
+// against that same context, so top-level bindings persist across execs.
 
 import vm from "node:vm";
 import { format, inspect } from "node:util";
@@ -17,11 +15,11 @@ const EXIT = Symbol("code_mode.exit");
 const sandbox = Object.create(null);
 const ctx = vm.createContext(sandbox);
 
-let out = []; // output items for the running exec
+let out = [];
 let callSeq = 0;
-const pendingCalls = new Map(); // callId -> { resolve, reject }
+const pendingCalls = new Map();
 let currentExecId = null; // the exec whose tool calls are in flight; null between execs
-const persisted = new Set(); // top-level names earlier execs captured to globalThis
+const persisted = new Set();
 
 // ---------------------------------------------------------------- output helpers
 
@@ -113,7 +111,6 @@ const editDistance = (a, b, cap) => {
 
 const SUGGEST_LIMIT = 3;
 
-/** Candidates within a tolerance that shrinks for short names; a prefix relation ("timeout_secs" -> "timeout") always counts. */
 const closestNames = (target, candidates) => {
 	const cap = Math.max(2, Math.ceil(target.length / 2));
 	const scored = [];
@@ -148,7 +145,6 @@ const resolveToolName = (prop) => {
 
 const isPlainObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Additive warnings for argument keys the tool's inputSchema does not know. Never blocks the call. */
 const paramWarnings = (decl, args) => {
 	const schema = decl?.inputSchema;
 	if (!isPlainObject(schema) || !isPlainObject(schema.properties) || !isPlainObject(args)) return [];
@@ -181,8 +177,6 @@ const tools = new Proxy(Object.create(null), {
 	get(_t, prop) {
 		// `then` guard: awaiting the proxy itself must not deadlock.
 		if (prop === "then" || typeof prop === "symbol") return undefined;
-		// Loud surface: an unknown name throws with the closest real names —
-		// a guessed API must not silently no-op.
 		const name = resolveToolName(String(prop));
 		return (args) => callTool(name, args);
 	},
@@ -220,8 +214,6 @@ async function runExec(msg) {
 	let value;
 	let error;
 	try {
-		// ONE compile path: every script goes through the acorn rewrite
-		// (compile.ts), so compile semantics are identical for every shape.
 		const compiled = compileScript(String(msg.code ?? ""), { persistedNames: persisted });
 		try {
 			value = await vm.runInContext(compiled.source, ctx, {
@@ -293,13 +285,10 @@ process.on("unhandledRejection", (e) => {
 // settles every pending exec when the worker dies.
 process.on("disconnect", () => process.exit(0));
 
-// JIT warmup: the first execs pay for V8 JIT-ing acorn and the vm run
-// machinery (~1.2 ms on exec 1, tens of µs for the next few hundred). Pre-run
-// the one compile path at boot so exec 1 costs what exec 1000 costs — the
-// 20-exec round-trip budget cannot absorb the ramp. Unique sources defeat
-// V8's compilation cache (that is the point: warm the parser, not the cache);
-// expression-only scripts capture nothing, so the sandbox stays clean.
-// ~2000 parses ≈ single-digit ms of boot, against a 5 s handshake.
+// JIT warmup: pre-run the one compile path at boot so exec 1 costs what
+// exec 1000 costs. Unique sources defeat V8's compilation cache (that is the
+// point: warm the parser, not the cache); expression-only scripts capture
+// nothing, so the sandbox stays clean.
 for (let i = 0; i < 2000; i += 1) compileScript(`${i} + 1`, { persistedNames: new Set() });
 for (let i = 0; i < 25; i += 1) {
 	const warm = compileScript(`${i} + 1`, { persistedNames: new Set() });

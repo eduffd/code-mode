@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// check-docs.mjs — assert DESIGN.md and README.md against the repository;
-// CI runs it on every push.
+// check-docs.mjs — assert DESIGN.md and README.md against the repository
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

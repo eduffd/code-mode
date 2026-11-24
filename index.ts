@@ -1,20 +1,4 @@
-// code-mode — Pi extension: persistent REPL + session-level tool gating.
-//
-// - `code_mode` tool: the model writes JavaScript; it runs in a long-lived
-//   worker whose vm context persists top-level bindings across calls.
-//   Session tools are callable as `tools.<name>(args)`; output is distilled.
-// - `/code-mode` command: on | off | only | status — "only" hides direct tool
-//   declarations from the model (they stay callable from scripts), steering
-//   work through the REPL.
-//
-// This file is the adapter, and only that: register the tool, the command,
-// and the session hooks on pi, forward events, and map settled outcomes to
-// the public result shape. Mode ownership (resolution, the settings boundary
-// with its flat-key warning, loadout building, the /code-mode decision) lives
-// in gating.ts; result formatting lives in format.ts; the exec lifecycle
-// lives in lifecycle.ts (pure core) and worker-host.ts (effects). Exec
-// futures are resolve-only — the core settles every accepted exec exactly
-// once, so there is no reject path here. See DESIGN.md.
+// index.ts — the adapter: tool, command, session hooks.
 
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -29,10 +13,6 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 export default function codeModeExtension(pi: ExtensionAPI) {
 	const mode = createModeOwner(() => pi.getSettings());
 
-	// A flat mode key would otherwise be a silent no-op: surface the warning
-	// once, loudly, when the session starts — the TUI notification when UI
-	// exists, stderr otherwise (pi's own convention for extension
-	// diagnostics).
 	pi.on("session_start", (_event, ctx) => {
 		const warning = mode.resolve().warning;
 		if (!warning) return;
@@ -63,7 +43,6 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 			.map((t) => ({ name: t.name, description: t.description ?? "", inputSchema: t.parameters }));
 	}
 
-	/** The only place a caller future is created: resolve-only, the core settles it. */
 	function runScript(code: string, timeoutMs: number, ctx: ExtensionToolContext): Promise<ExecOutcome> {
 		const exec: AcceptedExec = { id: ++execSeq, code, tools: toolDeclarations(ctx), timeoutMs };
 		return new Promise<ExecOutcome>((resolve) => {
@@ -130,7 +109,6 @@ export default function codeModeExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	// REPL state is per-process and per-session: reset on switches and shutdown.
 	pi.on("session_before_switch", () => dispatch({ type: "stopRequested" }));
 	pi.on("session_before_fork", () => dispatch({ type: "stopRequested" }));
 	pi.on("session_shutdown", () => dispatch({ type: "stopRequested" }));
