@@ -38,8 +38,10 @@ A flat `codemode.mode` key is ignored loudly: mode falls back to `on` and the se
 - `test-lifecycle-core.mjs` — step-table suite for the lifecycle core (`node test-lifecycle-core.mjs`, 57 checks)
 - `test-format.mjs` — unit checks for format.ts (`node test-format.mjs`, 14 checks)
 - `scripts/check-docs.mjs` — asserts this README and DESIGN.md against the repository; fails on a planted lie (`node scripts/check-docs.mjs`)
+- `scripts/check-structure.mjs` — structural gates: one compile path, module boundaries (only `worker-host.ts` spawns; `protocol.ts` stays erasable), the tsc-gate wiring, skill-file integrity (`node scripts/check-structure.mjs`)
+- `tsconfig.json` — the strict-tsc gate config (`strict`, `noUncheckedIndexedAccess`); `evidence/tsc.txt` records the passing run
 - `scripts/worker-cleanup.mjs` — kills only the child pids of a given pid (`node scripts/worker-cleanup.mjs --pid <pid> [--dry-run]`); the consumer for the worker-host pidfile when a session died
-- `.github/workflows/ci.yml` — runs the six gate suites on every push and pull request
+- `.github/workflows/ci.yml` — runs the eight gates on every push and pull request
 - `.pi/settings.json` — the workspace mode preference, in the nested shape
 
 ## Limits
@@ -61,4 +63,4 @@ node test-format.mjs             # 14 checks
 node scripts/check-docs.mjs      # docs match the repository
 ```
 
-CI (`.github/workflows/ci.yml`) runs those six suites on every push and pull request. The sixth is the lifecycle interleaving checker (`.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs`, 85 scenarios plus replay probes): jiti is a devDependency, so it needs no local pi installation. `.claude/skills/verify/` holds the driver skill and feature recipes for proving user-facing behavior end to end.
+CI (`.github/workflows/ci.yml`) runs eight gates on every push and pull request: the strict-tsc gate (`./node_modules/.bin/tsc --noEmit`), the four suites above, the lifecycle interleaving checker (`.claude/skills/exec-lifecycle/check-exec-lifecycle.mjs`, 85 scenarios plus replay probes; jiti is a devDependency), and the two assertion gates `scripts/check-docs.mjs` + `scripts/check-structure.mjs`. `.claude/skills/verify/` holds the driver skill and feature recipes for proving user-facing behavior end to end.

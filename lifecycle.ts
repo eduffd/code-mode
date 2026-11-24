@@ -166,8 +166,8 @@ const execSend = (handle: WorkerHandle, exec: AcceptedExec): Effect => ({
 const timerEffect = (exec: AcceptedExec): Effect => ({ type: "setTimer", id: exec.id, durationMs: exec.timeoutMs });
 
 const drain = (handle: WorkerHandle, queued: readonly AcceptedExec[]): StepResult => {
-	if (queued.length === 0) return { state: { kind: "ready", handle }, effects: [], settled: [] };
 	const [next, ...rest] = queued;
+	if (next === undefined) return { state: { kind: "ready", handle }, effects: [], settled: [] };
 	const state: LifecycleState = { kind: "running", handle, active: { exec: next, journal: [] }, queued: rest };
 	return { state, effects: [execSend(handle, next), timerEffect(next)], settled: [] };
 };

@@ -18,11 +18,11 @@
 
 import type { ExtensionAPI, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { buildLoadout, createModeOwner, handleCommand, CODE_MODE_TOOL } from "./gating";
-import { formatResult } from "./format";
-import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol";
-import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle";
-import { createWorkerHost } from "./worker-host";
+import { buildLoadout, createModeOwner, handleCommand, CODE_MODE_TOOL } from "./gating.ts";
+import { formatResult } from "./format.ts";
+import { DISCOVERY_GLOBALS, DISCOVERY_LISTING, type ExecOutcome, type ToolDecl } from "./protocol.ts";
+import { step, type AcceptedExec, type LifecycleEvent, type LifecycleState } from "./lifecycle.ts";
+import { createWorkerHost } from "./worker-host.ts";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 

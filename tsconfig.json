@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"target": "esnext",
+		"lib": ["esnext"],
+		"types": ["node"],
+		"skipLibCheck": true,
+		"noUncheckedIndexedAccess": true
+	},
+	"include": ["*.ts"]
+}
