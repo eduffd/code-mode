@@ -13,6 +13,7 @@
 //       end delivered while running  -> ok:true,  stateLost:false
 //       no end, no worker stop       -> TimeoutError, stateLost:true
 //       worker stop settled the exec -> ok:false, stateLost:true
+//       end racing a worker stop     -> either winner, both honest
 //   P4 late-end hygiene — an end message for an already-settled exec is ignored
 //   P5 late-tool-answer — a tool answer for a finished exec journals nothing on
 //       the next exec and sends the worker nothing
@@ -234,14 +235,23 @@ async function runScenario(actions) {
 			const d = r1s.details ?? {};
 			const txt = typeof r1s.content?.[0]?.text === "string" ? r1s.content[0].text : "";
 			const errName = (txt.match(/Error: (\w+)/) || [])[1];
-			if (cur.endBeforeSettle && !(d.ok === true && d.stateLost === false))
-				violations.push("P3 end-delivered run should be ok:true stateLost:false");
-			if (!cur.endBeforeSettle && !cur.stopBeforeSettle) {
+			if (cur.endBeforeSettle && cur.stopBeforeSettle) {
+				// The end raced a worker stop: either event may win. end wins ->
+				// ok:true stateLost:false; stop wins -> ok:false stateLost:true.
+				// (CI run 45395773133: [crash,end] wrongly demanded ok:true.)
+				const endWon = d.ok === true && d.stateLost === false;
+				const stopWon = d.ok === false && d.stateLost === true;
+				if (!endWon && !stopWon) violations.push("P3 end-vs-stop race produced a dishonest outcome: " + JSON.stringify(d));
+			} else if (cur.endBeforeSettle) {
+				if (!(d.ok === true && d.stateLost === false))
+					violations.push("P3 end-delivered run should be ok:true stateLost:false");
+			} else if (cur.stopBeforeSettle) {
+				if (!(d.ok === false && d.stateLost === true))
+					violations.push("P3 worker-stop outcome should be ok:false stateLost:true");
+			} else {
 				if (!(d.ok === false && d.stateLost === true && errName === "TimeoutError"))
 					violations.push("P3 plain timeout should be ok:false TimeoutError stateLost:true");
 			}
-			if (cur.stopBeforeSettle && !(d.ok === false && d.stateLost === true))
-				violations.push("P3 worker-stop outcome should be ok:false stateLost:true");
 		}
 		return { actions, r1: outcomeShape(r1s), r2: outcomeShape(r2.settled ? r2.result : null), violations };
 	} finally {
